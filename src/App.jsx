@@ -43,16 +43,6 @@ export default function App() {
   const domain  = url ? (() => { try { return new URL(url).hostname; } catch { return url; } })() : '';
 
   const isRunning = status === 'running';
-  const isDone    = status === 'done';
-
-  const missingFcKey   = !fcKey;
-  const missingGroqKey = !(llmProvider === 'nvidia' ? nvidiaKey : groqKey);
-
-  const btnClass = `btn-run${isRunning ? ' running' : isDone ? ' done' : ''}`;
-  const btnLabel = isRunning ? '▶ running...' : isDone ? '↺ run again' : 'run autopsy';
-
-  const hasGraph   = graphData && graphData.nodes.length > 0;
-  const hasProfile = !!branding || !!screenshot || !!rootScrape;
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -309,101 +299,23 @@ export default function App() {
       <div className="app-layout">
         {/* ── Left sidebar ── */}
         <div className="col-sidebar">
-
-          {/* URL input + Run/Stop — always visible */}
-          <div className="sidebar-url-section">
-            <div style={{ position: 'relative' }}>
-              {url && (
-                <img
-                  src={`https://www.google.com/s2/favicons?domain=${(() => { try { return new URL(url).hostname; } catch { return url; } })()}&sz=16`}
-                  alt=""
-                  style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', width: 14, height: 14, opacity: 0.6, pointerEvents: 'none' }}
-                />
-              )}
-              <input
-                className="text-input chat-url-input"
-                type="url"
-                placeholder="https://example.com"
-                value={url}
-                style={{ paddingLeft: url ? 32 : undefined, paddingRight: url ? 28 : undefined }}
-                onChange={e => { setUrl(e.target.value); persist('sa_url', e.target.value); }}
-                onKeyDown={e => { if (e.key === 'Enter' && !isRunning && url) runAutopsy(); }}
-                disabled={isRunning}
-              />
-              {url && !isRunning && (
-                <button
-                  onClick={() => { setUrl(''); persist('sa_url', ''); }}
-                  style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#333', fontSize: 12, lineHeight: 1, padding: 2 }}
-                >✕</button>
-              )}
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {isRunning && <button className="btn-stop" onClick={stopAutopsy}>■ stop</button>}
-              <button
-                className={btnClass}
-                style={{ flex: 1, padding: '10px 12px' }}
-                onClick={runAutopsy}
-                disabled={isRunning || !url}
-              >
-                {btnLabel}
-              </button>
-            </div>
-            {!isRunning && (missingFcKey || missingGroqKey) && (
-              <div className="key-warnings">
-                {missingFcKey   && <span className="key-warn key-warn-critical">⚠ Firecrawl key missing</span>}
-                {missingGroqKey && <span className="key-warn key-warn-soft">⚠ AI key missing</span>}
-              </div>
-            )}
-          </div>
-
-          {/* API Keys (collapsible) */}
-          <InputPanel
-            fcKey={fcKey} setFcKey={setFcKey}
-            llmProvider={llmProvider} setLlmProvider={setLlmProvider}
-            nvidiaKey={nvidiaKey} setNvidiaKey={setNvidiaKey}
-            groqKey={groqKey} setGroqKey={setGroqKey}
-            persist={persist}
-            status={status}
-          />
-
-          {/* View navigation */}
-          <div className="sidebar-nav">
-            <button
-              className={`sidebar-nav-btn${activeTab === 'feed' ? ' active' : ''}`}
-              onClick={() => setActiveTab('feed')}
-            >
-              <span className={`tab-dot ${isRunning ? 'dot-orange dot-pulse' : logs.length ? 'dot-green' : 'dot-dim'}`} />
-              <span className="sidebar-nav-label">Live Feed</span>
-              {logs.length > 0 && <span className="sidebar-nav-count">{logs.length}</span>}
-              <span className="sidebar-nav-shortcut">1</span>
-            </button>
-            <button
-              className={`sidebar-nav-btn${activeTab === 'graph' ? ' active' : ''}`}
-              onClick={() => setActiveTab('graph')}
-            >
-              <span className={`tab-dot ${hasGraph ? 'dot-green' : 'dot-dim'}`} />
-              <span className="sidebar-nav-label">Graph</span>
-              {hasGraph && <span className="tab-badge">{graphData.nodes.length}</span>}
-              <span className="sidebar-nav-shortcut">2</span>
-            </button>
-            <button
-              className={`sidebar-nav-btn${activeTab === 'profile' ? ' active' : ''}`}
-              onClick={() => setActiveTab('profile')}
-            >
-              <span className={`tab-dot ${hasProfile ? 'dot-green' : 'dot-dim'}`} />
-              <span className="sidebar-nav-label">Site Profile</span>
-              <span className="sidebar-nav-shortcut">3</span>
-            </button>
-          </div>
-
-          {/* Conditional lower section */}
           {activeTab === 'profile' ? (
             <SnapshotSidebar rootScrape={rootScrape} />
           ) : (
-            <Sidebar
-              stats={stats} status={status} elapsed={elapsed}
-              history={history} onClearHistory={clearHistory}
-            />
+            <>
+              <InputPanel
+                fcKey={fcKey} setFcKey={setFcKey}
+                llmProvider={llmProvider} setLlmProvider={setLlmProvider}
+                nvidiaKey={nvidiaKey} setNvidiaKey={setNvidiaKey}
+                groqKey={groqKey} setGroqKey={setGroqKey}
+                persist={persist}
+                status={status}
+              />
+              <Sidebar
+                stats={stats} status={status} elapsed={elapsed}
+                history={history} onClearHistory={clearHistory}
+              />
+            </>
           )}
         </div>
 
@@ -411,6 +323,12 @@ export default function App() {
         <div className="col-center">
           <Terminal
             logs={logs} status={status}
+            url={url} setUrl={setUrl}
+            persist={persist}
+            onRun={runAutopsy}
+            onStop={stopAutopsy}
+            missingFcKey={missingFcKey}
+            missingGroqKey={missingGroqKey}
             graphData={graphData}
             branding={branding}
             screenshot={screenshot}

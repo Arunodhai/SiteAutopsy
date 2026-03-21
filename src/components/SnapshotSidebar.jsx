@@ -60,15 +60,9 @@ export default function SnapshotSidebar({ rootScrape }) {
           </div>
         )}
         {description && (
-          <div style={{ marginBottom: 8 }}>
+          <div>
             <div style={{ fontSize: 8, color: '#444', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 3 }}>Desc</div>
             <div style={{ fontSize: 10, color: '#888', lineHeight: 1.5 }}>{description}</div>
-          </div>
-        )}
-        {ogImage && (
-          <div>
-            <div style={{ fontSize: 8, color: '#444', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 5 }}>OG Image</div>
-            <img src={ogImage} alt="OG" style={{ width: '100%', borderRadius: 3, border: '1px solid #1a1a1a', objectFit: 'cover', maxHeight: 90 }} />
           </div>
         )}
       </div>

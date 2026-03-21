@@ -1,6 +1,91 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 
+function MiniMap({ nodes, links, fgRef }) {
+  const canvasRef = useRef(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !nodes?.length) return;
+
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width;
+    const H = canvas.height;
+    const pad = 10;
+
+    const positioned = nodes.filter(n => isFinite(n.x) && isFinite(n.y));
+    if (!positioned.length) return;
+
+    const xs = positioned.map(n => n.x);
+    const ys = positioned.map(n => n.y);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    const rangeX = maxX - minX || 1;
+    const rangeY = maxY - minY || 1;
+
+    const scale = Math.min((W - pad * 2) / rangeX, (H - pad * 2) / rangeY);
+    const offX = (W - rangeX * scale) / 2 - minX * scale;
+    const offY = (H - rangeY * scale) / 2 - minY * scale;
+
+    const toMX = x => x * scale + offX;
+    const toMY = y => y * scale + offY;
+
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, H);
+
+    // Draw edges
+    ctx.lineWidth = 0.5;
+    for (const link of (links || [])) {
+      const s = typeof link.source === 'object' ? link.source : null;
+      const t = typeof link.target === 'object' ? link.target : null;
+      if (!s || !t || !isFinite(s.x) || !isFinite(t.x)) continue;
+      ctx.beginPath();
+      ctx.moveTo(toMX(s.x), toMY(s.y));
+      ctx.lineTo(toMX(t.x), toMY(t.y));
+      ctx.strokeStyle = '#1e1e1e';
+      ctx.stroke();
+    }
+
+    // Draw nodes
+    for (const node of positioned) {
+      const mx = toMX(node.x);
+      const my = toMY(node.y);
+      const r = node.isRoot ? 3.5 : 2;
+      ctx.beginPath();
+      ctx.arc(mx, my, r, 0, 2 * Math.PI);
+      ctx.fillStyle = nodeColor(node);
+      ctx.fill();
+    }
+  });
+
+  return (
+    <div style={{
+      position: 'absolute',
+      bottom: 14,
+      right: 14,
+      zIndex: 20,
+      border: '1px solid #1e1e1e',
+      borderRadius: 3,
+      overflow: 'hidden',
+      background: '#000',
+      opacity: 0.85,
+    }}>
+      <div style={{
+        fontSize: 7,
+        color: '#2a2a2a',
+        letterSpacing: '0.1em',
+        textTransform: 'uppercase',
+        padding: '3px 6px',
+        borderBottom: '1px solid #111',
+      }}>
+        minimap
+      </div>
+      <canvas ref={canvasRef} width={150} height={110} />
+    </div>
+  );
+}
+
 const SEV_COLOR = { CRITICAL: '#ff4444', WARNING: '#f5c542', INFO: '#00d4ff' };
 
 // Depth ring color tints — subtle hue shifts per ring
@@ -541,6 +626,7 @@ export default function GraphView({ graphData, isBuilding, isActive }) {
 
       <Legend />
       <InsightBar insights={graphData.insights} />
+      <MiniMap nodes={gData.nodes} links={gData.links} fgRef={fgRef} />
       </>)}
     </div>
   );
