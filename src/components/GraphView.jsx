@@ -1,17 +1,17 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 
-function MiniMap({ nodes, links, fgRef }) {
+export function MiniMap({ nodes, links }) {
   const canvasRef = useRef(null);
 
-  useEffect(() => {
+  function draw() {
     const canvas = canvasRef.current;
     if (!canvas || !nodes?.length) return;
 
     const ctx = canvas.getContext('2d');
     const W = canvas.width;
     const H = canvas.height;
-    const pad = 10;
+    const pad = 8;
 
     const positioned = nodes.filter(n => isFinite(n.x) && isFinite(n.y));
     if (!positioned.length) return;
@@ -34,7 +34,7 @@ function MiniMap({ nodes, links, fgRef }) {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, W, H);
 
-    // Draw edges
+    // Edges
     ctx.lineWidth = 0.5;
     for (const link of (links || [])) {
       const s = typeof link.source === 'object' ? link.source : null;
@@ -43,21 +43,28 @@ function MiniMap({ nodes, links, fgRef }) {
       ctx.beginPath();
       ctx.moveTo(toMX(s.x), toMY(s.y));
       ctx.lineTo(toMX(t.x), toMY(t.y));
-      ctx.strokeStyle = '#1e1e1e';
+      ctx.strokeStyle = '#222';
       ctx.stroke();
     }
 
-    // Draw nodes
+    // Nodes
     for (const node of positioned) {
       const mx = toMX(node.x);
       const my = toMY(node.y);
-      const r = node.isRoot ? 3.5 : 2;
+      const r = node.isRoot ? 4 : 2;
       ctx.beginPath();
       ctx.arc(mx, my, r, 0, 2 * Math.PI);
       ctx.fillStyle = nodeColor(node);
       ctx.fill();
     }
-  });
+  }
+
+  // Redraw every 200 ms so the minimap tracks the live simulation
+  useEffect(() => {
+    draw();
+    const id = setInterval(draw, 200);
+    return () => clearInterval(id);
+  }, [nodes, links]);
 
   return (
     <div style={{
@@ -69,19 +76,23 @@ function MiniMap({ nodes, links, fgRef }) {
       borderRadius: 3,
       overflow: 'hidden',
       background: '#000',
-      opacity: 0.85,
+      opacity: 0.9,
     }}>
       <div style={{
         fontSize: 7,
         color: '#2a2a2a',
-        letterSpacing: '0.1em',
+        letterSpacing: '0.12em',
         textTransform: 'uppercase',
-        padding: '3px 6px',
+        padding: '3px 7px',
         borderBottom: '1px solid #111',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
       }}>
-        minimap
+        <span>minimap</span>
+        <span style={{ color: '#1a1a1a' }}>{nodes?.length} nodes</span>
       </div>
-      <canvas ref={canvasRef} width={150} height={110} />
+      <canvas ref={canvasRef} width={160} height={120} />
     </div>
   );
 }
@@ -626,7 +637,6 @@ export default function GraphView({ graphData, isBuilding, isActive }) {
 
       <Legend />
       <InsightBar insights={graphData.insights} />
-      <MiniMap nodes={gData.nodes} links={gData.links} fgRef={fgRef} />
       </>)}
     </div>
   );

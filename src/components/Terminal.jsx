@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import GraphView from './GraphView.jsx';
+import GraphView, { MiniMap } from './GraphView.jsx';
 import BrandingView from './BrandingView.jsx';
 import SnapshotView from './SnapshotView.jsx';
 
@@ -128,10 +128,11 @@ export default function Terminal({
       )}
 
       {/* Feed panel */}
+      <div style={{ display: activeTab === 'feed' ? 'flex' : 'none', flex: 1, position: 'relative', minHeight: 0 }}>
       <div
         className="terminal-body"
         ref={bodyRef}
-        style={{ display: activeTab === 'feed' ? 'flex' : 'none' }}
+        style={{ flex: 1 }}
       >
         {logs.length === 0 ? (
           <div className="terminal-prompt-state">
@@ -172,6 +173,10 @@ export default function Terminal({
             )}
           </div>
         )}
+      </div>
+      {graphData && graphData.nodes.length > 0 && (
+        <MiniMap nodes={graphData.nodes} links={graphData.links} />
+      )}
       </div>
 
       {/* Graph panel */}
