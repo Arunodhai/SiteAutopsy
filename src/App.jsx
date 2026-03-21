@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { mapUrl, scrapeUrl, scrapeBranding, scrapeSnapshot } from './lib/firecrawl.js';
 import styles from './styles.js';
 import InputPanel from './components/InputPanel.jsx';
@@ -41,6 +41,32 @@ export default function App() {
 
   const persist = (key, val) => localStorage.setItem(key, val);
   const domain  = url ? (() => { try { return new URL(url).hostname; } catch { return url; } })() : '';
+
+  const isRunning = status === 'running';
+  const isDone    = status === 'done';
+
+  const missingFcKey   = !fcKey;
+  const missingGroqKey = !(llmProvider === 'nvidia' ? nvidiaKey : groqKey);
+
+  const btnClass = `btn-run${isRunning ? ' running' : isDone ? ' done' : ''}`;
+  const btnLabel = isRunning ? '▶ running...' : isDone ? '↺ run again' : 'run autopsy';
+
+  const hasGraph   = graphData && graphData.nodes.length > 0;
+  const hasProfile = !!branding || !!screenshot || !!rootScrape;
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      if ((e.key === 'r' || e.key === 'R') && !isRunning && url) runAutopsy();
+      if (e.key === 'Escape' && isRunning) stopAutopsy();
+      if (e.key === '1') setActiveTab('feed');
+      if (e.key === '2') setActiveTab('graph');
+      if (e.key === '3') setActiveTab('profile');
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [url, isRunning]);
 
   const pushLog = (sev, msg, path = '') =>
     setLogs(prev => [...prev, {
@@ -103,7 +129,6 @@ export default function App() {
       return;
     }
 
-    // Normalise root URL — must go through normaliseUrl so it's canonical
     const rootUrl = normaliseUrl(url, currentDomain) || url;
 
     pushLog('SYSTEM', `Initializing autopsy on ${currentDomain}`);
@@ -119,17 +144,14 @@ export default function App() {
 
     if (controller.signal.aborted) { setStatus('done'); return; }
 
-    // Filter out non-HTML resources (sitemaps, PDFs, assets) — they pollute the graph
     const NON_HTML = /\.(xml|txt|pdf|json|rss|atom|csv|xlsx|docx|zip|png|jpg|jpeg|gif|webp|svg|ico|css|js|woff2?)$/i;
     urls = urls.filter(u => {
       try { return !NON_HTML.test(new URL(u).pathname); } catch { return true; }
     });
 
     pushLog('SYSTEM', `Discovered ${urls.length} pages — beginning scan`);
-    // +1 for the AI summary step so 100% only hits after summary completes
     setStats(s => ({ ...s, total: urls.length + (activeKey ? 1 : 0) }));
 
-    // Initialise link map with all discovered HTML URLs
     for (const u of urls) {
       const norm = normaliseUrl(u, currentDomain) || u;
       linkMapRef.current[norm] = [];
@@ -150,10 +172,6 @@ export default function App() {
       try {
         const res = await scrapeUrl(pageUrl, fcKey);
 
-        // --- SEO checks ---
-        // rawHtml is the unprocessed page HTML — includes <head>, <script>, <link> tags
-        // that Firecrawl strips from the cleaned 'html' format
-        // Save root page for branding extraction
         if (!rootScrapeRef.current) {
           rootScrapeRef.current = { url: pageUrl, res };
           setRootScrape({ url: pageUrl, res });
@@ -172,10 +190,7 @@ export default function App() {
           pushLog('OK', 'No issues found', path);
         }
 
-        // --- Internal link extraction ---
         const rawLinks = [...(res.links || [])];
-        // Parse both html (cleaned) and rawHtml (full) — rawHtml catches links in
-        // JS-rendered navigation (Wix, Webflow, etc.) that the cleaned version strips
         for (const htmlSrc of [res.html, res.rawHtml]) {
           if (!htmlSrc) continue;
           try {
@@ -209,7 +224,6 @@ export default function App() {
         crits:    allIssues.filter(i => i.sev === 'CRITICAL').length,
         warnings: allIssues.filter(i => i.sev === 'WARNING').length,
       }));
-
     }
 
     if (!controller.signal.aborted) {
@@ -230,10 +244,8 @@ export default function App() {
     const elapsedSec = Math.round((Date.now() - startTimeRef.current) / 1000);
     setElapsed(elapsedSec);
 
-    // Final graph rebuild
     updateGraph(rootUrl);
 
-    // Extract branding + snapshot (screenshot + summary) in parallel — both best-effort
     if (!controller.signal.aborted) {
       pushLog('SYSTEM', 'Extracting branding & snapshot...');
       await Promise.allSettled([
@@ -295,36 +307,110 @@ export default function App() {
       </header>
 
       <div className="app-layout">
+        {/* ── Left sidebar ── */}
         <div className="col-sidebar">
-          {activeTab === 'snapshot' ? (
+
+          {/* URL input + Run/Stop — always visible */}
+          <div className="sidebar-url-section">
+            <div style={{ position: 'relative' }}>
+              {url && (
+                <img
+                  src={`https://www.google.com/s2/favicons?domain=${(() => { try { return new URL(url).hostname; } catch { return url; } })()}&sz=16`}
+                  alt=""
+                  style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', width: 14, height: 14, opacity: 0.6, pointerEvents: 'none' }}
+                />
+              )}
+              <input
+                className="text-input chat-url-input"
+                type="url"
+                placeholder="https://example.com"
+                value={url}
+                style={{ paddingLeft: url ? 32 : undefined, paddingRight: url ? 28 : undefined }}
+                onChange={e => { setUrl(e.target.value); persist('sa_url', e.target.value); }}
+                onKeyDown={e => { if (e.key === 'Enter' && !isRunning && url) runAutopsy(); }}
+                disabled={isRunning}
+              />
+              {url && !isRunning && (
+                <button
+                  onClick={() => { setUrl(''); persist('sa_url', ''); }}
+                  style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#333', fontSize: 12, lineHeight: 1, padding: 2 }}
+                >✕</button>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {isRunning && <button className="btn-stop" onClick={stopAutopsy}>■ stop</button>}
+              <button
+                className={btnClass}
+                style={{ flex: 1, padding: '10px 12px' }}
+                onClick={runAutopsy}
+                disabled={isRunning || !url}
+              >
+                {btnLabel}
+              </button>
+            </div>
+            {!isRunning && (missingFcKey || missingGroqKey) && (
+              <div className="key-warnings">
+                {missingFcKey   && <span className="key-warn key-warn-critical">⚠ Firecrawl key missing</span>}
+                {missingGroqKey && <span className="key-warn key-warn-soft">⚠ AI key missing</span>}
+              </div>
+            )}
+          </div>
+
+          {/* API Keys (collapsible) */}
+          <InputPanel
+            fcKey={fcKey} setFcKey={setFcKey}
+            llmProvider={llmProvider} setLlmProvider={setLlmProvider}
+            nvidiaKey={nvidiaKey} setNvidiaKey={setNvidiaKey}
+            groqKey={groqKey} setGroqKey={setGroqKey}
+            persist={persist}
+            status={status}
+          />
+
+          {/* View navigation */}
+          <div className="sidebar-nav">
+            <button
+              className={`sidebar-nav-btn${activeTab === 'feed' ? ' active' : ''}`}
+              onClick={() => setActiveTab('feed')}
+            >
+              <span className={`tab-dot ${isRunning ? 'dot-orange dot-pulse' : logs.length ? 'dot-green' : 'dot-dim'}`} />
+              <span className="sidebar-nav-label">Live Feed</span>
+              {logs.length > 0 && <span className="sidebar-nav-count">{logs.length}</span>}
+              <span className="sidebar-nav-shortcut">1</span>
+            </button>
+            <button
+              className={`sidebar-nav-btn${activeTab === 'graph' ? ' active' : ''}`}
+              onClick={() => setActiveTab('graph')}
+            >
+              <span className={`tab-dot ${hasGraph ? 'dot-green' : 'dot-dim'}`} />
+              <span className="sidebar-nav-label">Graph</span>
+              {hasGraph && <span className="tab-badge">{graphData.nodes.length}</span>}
+              <span className="sidebar-nav-shortcut">2</span>
+            </button>
+            <button
+              className={`sidebar-nav-btn${activeTab === 'profile' ? ' active' : ''}`}
+              onClick={() => setActiveTab('profile')}
+            >
+              <span className={`tab-dot ${hasProfile ? 'dot-green' : 'dot-dim'}`} />
+              <span className="sidebar-nav-label">Site Profile</span>
+              <span className="sidebar-nav-shortcut">3</span>
+            </button>
+          </div>
+
+          {/* Conditional lower section */}
+          {activeTab === 'profile' ? (
             <SnapshotSidebar rootScrape={rootScrape} />
           ) : (
-            <>
-              <InputPanel
-                fcKey={fcKey} setFcKey={setFcKey}
-                llmProvider={llmProvider} setLlmProvider={setLlmProvider}
-                nvidiaKey={nvidiaKey} setNvidiaKey={setNvidiaKey}
-                groqKey={groqKey} setGroqKey={setGroqKey}
-                persist={persist}
-                status={status}
-              />
-              <Sidebar
-                stats={stats} status={status} elapsed={elapsed}
-                history={history} onClearHistory={clearHistory}
-              />
-            </>
+            <Sidebar
+              stats={stats} status={status} elapsed={elapsed}
+              history={history} onClearHistory={clearHistory}
+            />
           )}
         </div>
 
+        {/* ── Center — content panels ── */}
         <div className="col-center">
           <Terminal
             logs={logs} status={status}
-            url={url} setUrl={setUrl}
-            persist={persist}
-            onRun={runAutopsy}
-            onStop={stopAutopsy}
-            missingFcKey={!fcKey}
-            missingGroqKey={!(llmProvider === 'nvidia' ? nvidiaKey : groqKey)}
             graphData={graphData}
             branding={branding}
             screenshot={screenshot}
@@ -336,6 +422,7 @@ export default function App() {
           />
         </div>
 
+        {/* ── Right — report ── */}
         <div className="col-right">
           <ReportPanel
             issues={issues} report={report} status={status}

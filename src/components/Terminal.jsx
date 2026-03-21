@@ -12,10 +12,11 @@ const SEV_CLASS = {
   URL:      'sev-url',
 };
 
+const FILTERS = ['ALL', 'CRITICAL', 'WARNING', 'OK', 'SYSTEM'];
+
 function groupLogs(logs) {
   const sections = [];
   let currentGroup = null;
-
   for (const log of logs) {
     if (log.sev === 'URL') {
       if (currentGroup) sections.push({ type: 'group', ...currentGroup });
@@ -42,82 +43,53 @@ function LogLine({ log }) {
 }
 
 export default function Terminal({
-  logs, status, url, setUrl, persist, onRun, onStop,
-  missingFcKey, missingGroqKey, graphData, branding, screenshot, siteSummary, rootScrape, domain,
-  activeTab, setActiveTab,
+  logs, status, graphData, branding, screenshot, siteSummary, rootScrape, domain,
+  activeTab,
 }) {
   const bodyRef = useRef(null);
+  const [filter, setFilter] = useState('ALL');
 
+  // Auto-scroll feed
   useEffect(() => {
-    if (bodyRef.current) {
+    if (bodyRef.current && activeTab === 'feed') {
       bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
     }
-  }, [logs]);
+  }, [logs, activeTab]);
 
   const isRunning = status === 'running';
-  const isDone    = status === 'done';
 
-  const handleKey = (e) => {
-    if (e.key === 'Enter' && !isRunning && url) onRun();
-  };
+  // Filter logs
+  const filteredLogs = filter === 'ALL'
+    ? logs
+    : logs.filter(l => l.sev === filter || (filter === 'SYSTEM' && l.sev === 'URL'));
 
-  const btnClass = `btn-run${isRunning ? ' running' : isDone ? ' done' : ''}`;
-  const btnLabel = isRunning ? '▶ running...' : isDone ? '↺ run again' : 'run autopsy';
+  const sections = groupLogs(filteredLogs);
+  const urlGroupCount    = sections.filter(s => s.type === 'group').length;
+  let   urlGroupRendered = 0;
 
-  const sections = groupLogs(logs);
-  const urlGroupCount = sections.filter(s => s.type === 'group').length;
-  let urlGroupRendered = 0;
-
-  const hasGraph    = graphData && graphData.nodes.length > 0;
-  const hasBranding = !!branding;
-  const hasSnapshot = !!screenshot || !!rootScrape;
+  // Count per severity for filter badges
+  const counts = { CRITICAL: 0, WARNING: 0, OK: 0, SYSTEM: 0 };
+  logs.forEach(l => { if (counts[l.sev] !== undefined) counts[l.sev]++; });
 
   return (
     <>
-      {/* Tab bar */}
-      <div className="tab-bar">
-        <button
-          className={`tab-btn${activeTab === 'feed' ? ' tab-active' : ''}`}
-          onClick={() => setActiveTab('feed')}
-        >
-          <span className={`tab-dot ${isRunning ? 'dot-orange dot-pulse' : logs.length ? 'dot-green' : 'dot-dim'}`} />
-          Live Feed
-        </button>
-        <button
-          className={`tab-btn${activeTab === 'graph' ? ' tab-active' : ''}`}
-          onClick={() => setActiveTab('graph')}
-        >
-          <span className={`tab-dot ${hasGraph ? 'dot-green' : 'dot-dim'}`} />
-          Graph
-          {hasGraph && (
-            <span className="tab-badge">{graphData.nodes.length}</span>
-          )}
-        </button>
-
-        <button
-          className={`tab-btn${activeTab === 'branding' ? ' tab-active' : ''}`}
-          onClick={() => setActiveTab('branding')}
-        >
-          <span className={`tab-dot ${hasBranding ? 'dot-green' : 'dot-dim'}`} />
-          Branding
-        </button>
-
-        <button
-          className={`tab-btn${activeTab === 'snapshot' ? ' tab-active' : ''}`}
-          onClick={() => setActiveTab('snapshot')}
-        >
-          <span className={`tab-dot ${hasSnapshot ? 'dot-green' : 'dot-dim'}`} />
-          Snapshot
-        </button>
-
-        {/* Right side event count */}
-        <span className="tab-bar-right">
-          {activeTab === 'feed' && `${logs.length} events`}
-          {activeTab === 'graph' && hasGraph && `${graphData.links.length} links`}
-          {activeTab === 'branding' && hasBranding && branding.domain}
-          {activeTab === 'snapshot' && hasSnapshot && domain}
-        </span>
-      </div>
+      {/* Filter bar (feed only) */}
+      {activeTab === 'feed' && (
+        <div className="feed-filter-bar">
+          {FILTERS.map(f => (
+            <button
+              key={f}
+              className={`feed-filter-btn${filter === f ? ' active' : ''}`}
+              onClick={() => setFilter(f)}
+            >
+              {f}
+              {f !== 'ALL' && counts[f] > 0 && (
+                <span className="feed-filter-count">{counts[f]}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Feed panel */}
       <div
@@ -127,21 +99,20 @@ export default function Terminal({
       >
         {logs.length === 0 ? (
           <div className="terminal-prompt-state">
-            <div className="prompt-line"><span className="prompt-chevron">&gt;</span> Site Autopsy v1.0</div>
-            <div className="prompt-line"><span className="prompt-chevron">&gt;</span> Ready. Enter a URL below to begin.</div>
+            <div className="prompt-line"><span className="prompt-chevron">&gt;</span> Site Autopsy v2.0</div>
+            <div className="prompt-line"><span className="prompt-chevron">&gt;</span> Ready. Enter a URL to begin.</div>
+            <div className="prompt-line" style={{ color: '#2a2a2a', fontSize: 10, marginTop: 8 }}>
+              <span className="prompt-chevron">&gt;</span> Shortcuts: R = run · Esc = stop · 1-3 = views
+            </div>
             <div className="prompt-line"><span className="prompt-chevron">&gt;</span> <span className="cursor">█</span></div>
           </div>
         ) : (
           <div className="log-feed">
             {sections.map((section, i) => {
-              if (section.type === 'flat') {
-                return <LogLine key={i} log={section.log} />;
-              }
-
+              if (section.type === 'flat') return <LogLine key={i} log={section.log} />;
               const myIdx   = urlGroupRendered++;
               const isActive = isRunning && myIdx === urlGroupCount - 1;
               const { urlLog, children } = section;
-
               return (
                 <div key={i} className="log-group">
                   <div className="log-line log-url-parent">
@@ -150,95 +121,35 @@ export default function Terminal({
                     <span className="log-sev sev-url">URL</span>
                     <span className="log-msg log-url-msg">{urlLog.msg}</span>
                   </div>
-
                   {children.length > 0 && (
                     <div className="log-children">
-                      {children.map((child, j) => (
-                        <LogLine key={j} log={child} />
-                      ))}
+                      {children.map((child, j) => <LogLine key={j} log={child} />)}
                     </div>
                   )}
                 </div>
               );
             })}
-
             {isRunning && (
               <div className="log-line">
-                <span className="log-time" />
-                <span className="log-sev sev-system" />
-                <span className="cursor">█</span>
+                <span className="log-time" /><span className="log-sev sev-system" /><span className="cursor">█</span>
               </div>
             )}
           </div>
         )}
       </div>
 
-      {/* Graph panel — always mounted so ResizeObserver can measure; hidden when inactive */}
+      {/* Graph panel */}
       <div className="graph-tab-body" style={{ display: activeTab === 'graph' ? 'flex' : 'none', flexDirection: 'column' }}>
         <GraphView graphData={graphData} isBuilding={isRunning} isActive={activeTab === 'graph'} />
       </div>
 
-      {/* Branding panel */}
-      <div className="branding-tab-body" style={{ display: activeTab === 'branding' ? 'flex' : 'none', flexDirection: 'column', overflow: 'auto' }}>
-        <BrandingView branding={branding} />
-      </div>
-
-      {/* Snapshot panel */}
-      <div style={{ display: activeTab === 'snapshot' ? 'flex' : 'none', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-        <SnapshotView screenshot={screenshot} siteSummary={siteSummary} rootScrape={rootScrape} domain={domain} />
-      </div>
-
-      {/* Chat-style input bar — always visible */}
-      <div className="chat-input-bar">
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <div style={{ position: 'relative', flex: 1 }}>
-              {url && (
-                <img
-                  src={`https://www.google.com/s2/favicons?domain=${(() => { try { return new URL(url).hostname; } catch { return url; } })()}&sz=16`}
-                  alt=""
-                  style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', width: 14, height: 14, opacity: 0.6, pointerEvents: 'none' }}
-                />
-              )}
-              <input
-                className="text-input chat-url-input"
-                type="url"
-                placeholder="https://example.com"
-                value={url}
-                style={{ width: '100%', paddingLeft: url ? 32 : undefined, paddingRight: url ? 28 : undefined }}
-                onChange={e => { setUrl(e.target.value); persist('sa_url', e.target.value); }}
-                onKeyDown={handleKey}
-                disabled={isRunning}
-              />
-              {url && !isRunning && (
-                <button
-                  onClick={() => { setUrl(''); persist('sa_url', ''); }}
-                  style={{
-                    position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
-                    background: 'none', border: 'none', cursor: 'pointer',
-                    color: '#333', fontSize: 12, lineHeight: 1, padding: 2,
-                  }}
-                >✕</button>
-              )}
-            </div>
-            {isRunning && (
-              <button className="btn-stop" onClick={onStop}>■ stop</button>
-            )}
-            <button
-              className={btnClass}
-              style={{ width: 'auto', padding: '10px 18px', flexShrink: 0 }}
-              onClick={onRun}
-              disabled={isRunning || !url}
-            >
-              {btnLabel}
-            </button>
-          </div>
-          {!isRunning && (missingFcKey || missingGroqKey) && (
-            <div className="key-warnings">
-              {missingFcKey  && <span className="key-warn key-warn-critical">⚠ Firecrawl key missing</span>}
-              {missingGroqKey && <span className="key-warn key-warn-soft">⚠ NVIDIA key missing — AI summary will be skipped</span>}
-            </div>
-          )}
+      {/* Site Profile panel — branding (left) + snapshot (right) */}
+      <div className="profile-split" style={{ display: activeTab === 'profile' ? 'flex' : 'none' }}>
+        <div className="profile-split-left">
+          <BrandingView branding={branding} />
+        </div>
+        <div className="profile-split-right">
+          <SnapshotView screenshot={screenshot} siteSummary={siteSummary} rootScrape={rootScrape} domain={domain} />
         </div>
       </div>
     </>

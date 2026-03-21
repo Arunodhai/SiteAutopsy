@@ -153,7 +153,6 @@ body {
 
 /* Input Panel (API keys only) */
 .input-panel {
-  padding: 22px 20px;
   border-bottom: 1px solid #181818;
   flex-shrink: 0;
 }
@@ -163,7 +162,6 @@ body {
   text-transform: uppercase;
   color: #ff6b2b;
   font-weight: 500;
-  margin-bottom: 16px;
 }
 .input-group {
   margin-bottom: 10px;
@@ -1520,6 +1518,121 @@ body {
   color: #ff4444;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+/* ── Feed filter bar ───────────────────────────────────── */
+.feed-filter-bar {
+  display: flex;
+  gap: 4px;
+  padding: 8px 20px;
+  border-bottom: 1px solid #181818;
+  flex-shrink: 0;
+  background: #000000;
+}
+.feed-filter-btn {
+  background: transparent;
+  border: 1px solid #1a1a1a;
+  border-radius: 2px;
+  color: #2a2a2a;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 3px 7px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.feed-filter-btn:hover { border-color: #2a2a2a; color: #555; }
+.feed-filter-btn.active { border-color: #ff6b2b55; color: #ff6b2b; background: #ff6b2b0a; }
+.feed-filter-count { font-size: 8px; color: inherit; opacity: 0.7; }
+
+/* ── Sidebar URL section ────────────────────────────────── */
+.sidebar-url-section {
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid #181818;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ── Sidebar vertical nav ───────────────────────────────── */
+.sidebar-nav {
+  border-bottom: 1px solid #181818;
+  flex-shrink: 0;
+}
+.sidebar-nav-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-left: 2px solid transparent;
+  padding: 9px 16px;
+  cursor: pointer;
+  font-family: 'JetBrains Mono', monospace;
+  transition: background 0.1s, border-color 0.1s;
+}
+.sidebar-nav-btn:hover { background: #080808; }
+.sidebar-nav-btn.active { border-left-color: #ff6b2b; background: #ff6b2b08; }
+.sidebar-nav-label {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: #333;
+  flex: 1;
+  text-align: left;
+}
+.sidebar-nav-btn.active .sidebar-nav-label { color: #ff6b2b; }
+.sidebar-nav-shortcut { font-size: 9px; color: #1e1e1e; letter-spacing: 0.06em; }
+.sidebar-nav-btn.active .sidebar-nav-shortcut { color: #ff6b2b44; }
+.sidebar-nav-count {
+  font-size: 9px;
+  color: #2a2a2a;
+  letter-spacing: 0.04em;
+}
+
+/* ── Site Profile panel — branding + snapshot split ─────── */
+.profile-split {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.profile-split-left {
+  flex: 1;
+  overflow-y: auto;
+  border-right: 1px solid #181818;
+  min-width: 0;
+}
+.profile-split-left::-webkit-scrollbar       { width: 3px; }
+.profile-split-left::-webkit-scrollbar-track { background: transparent; }
+.profile-split-left::-webkit-scrollbar-thumb { background: #1a1a1a; border-radius: 2px; }
+.profile-split-right {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* ── Input panel collapsible ────────────────────────────── */
+.input-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  padding: 14px 16px;
+  transition: background 0.1s;
+}
+.input-panel-header:hover { background: #080808; }
+.input-panel-body {
+  padding: 0 16px 14px;
 }
 `;
 
