@@ -7,7 +7,18 @@ function KeyIcon() {
   );
 }
 
-export default function InputPanel({ fcKey, setFcKey, groqKey, setGroqKey, persist, status }) {
+const PROVIDERS = [
+  { id: 'nvidia', label: 'NVIDIA', sub: 'Kimi K2.5', placeholder: 'nvapi-...',  storageKey: 'sa_nvidia_key' },
+  { id: 'groq',   label: 'Groq',   sub: 'Llama 3.3', placeholder: 'gsk_...',    storageKey: 'sa_groq_key'   },
+];
+
+export default function InputPanel({
+  fcKey, setFcKey,
+  llmProvider, setLlmProvider,
+  nvidiaKey, setNvidiaKey,
+  groqKey, setGroqKey,
+  persist, status,
+}) {
   const isRunning = status === 'running';
 
   function handleEnvLoad(e) {
@@ -16,14 +27,20 @@ export default function InputPanel({ fcKey, setFcKey, groqKey, setGroqKey, persi
     const reader = new FileReader();
     reader.onload = (ev) => {
       const text = ev.target.result;
-      const fc = text.match(/(?:VITE_)?(?:FC|FIRECRAWL)[_-]?(?:API[_-]?)?KEY\s*=\s*(.+)/i)?.[1]?.trim().replace(/^["']|["']$/g, '');
-      const groq = text.match(/(?:VITE_)?(?:GROQ|NVIDIA|NV)[_-]?(?:API[_-]?)?KEY\s*=\s*(.+)/i)?.[1]?.trim().replace(/^["']|["']$/g, '');
-      if (fc)   { setFcKey(fc);     persist('sa_fc_key', fc); }
-      if (groq) { setGroqKey(groq); persist('sa_nvidia_key', groq); }
+      const fc     = text.match(/(?:VITE_)?(?:FC|FIRECRAWL)[_-]?(?:API[_-]?)?KEY\s*=\s*(.+)/i)?.[1]?.trim().replace(/^["']|["']$/g, '');
+      const nvidia = text.match(/(?:VITE_)?(?:NVIDIA|NV)[_-]?(?:API[_-]?)?KEY\s*=\s*(.+)/i)?.[1]?.trim().replace(/^["']|["']$/g, '');
+      const groq   = text.match(/(?:VITE_)?GROQ[_-]?(?:API[_-]?)?KEY\s*=\s*(.+)/i)?.[1]?.trim().replace(/^["']|["']$/g, '');
+      if (fc)     { setFcKey(fc);       persist('sa_fc_key',     fc); }
+      if (nvidia) { setNvidiaKey(nvidia); persist('sa_nvidia_key', nvidia); }
+      if (groq)   { setGroqKey(groq);   persist('sa_groq_key',   groq); }
     };
     reader.readAsText(file);
     e.target.value = '';
   }
+
+  const activeKey    = llmProvider === 'nvidia' ? nvidiaKey    : groqKey;
+  const setActiveKey = llmProvider === 'nvidia' ? setNvidiaKey : setGroqKey;
+  const provider     = PROVIDERS.find(p => p.id === llmProvider);
 
   return (
     <div className="input-panel">
@@ -35,6 +52,7 @@ export default function InputPanel({ fcKey, setFcKey, groqKey, setGroqKey, persi
         </label>
       </div>
 
+      {/* Firecrawl key */}
       <div className="input-group">
         <div className="input-group-label" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
           <KeyIcon /> Firecrawl
@@ -49,17 +67,30 @@ export default function InputPanel({ fcKey, setFcKey, groqKey, setGroqKey, persi
         />
       </div>
 
+      {/* LLM provider toggle */}
       <div className="input-group">
-        <div className="input-group-label" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <KeyIcon /> NVIDIA (Kimi K2.5)
+        <div className="input-group-label" style={{ marginBottom: 8 }}>AI Summary</div>
+        <div className="llm-toggle">
+          {PROVIDERS.map(p => (
+            <button
+              key={p.id}
+              className={`llm-toggle-btn${llmProvider === p.id ? ' active' : ''}`}
+              onClick={() => { setLlmProvider(p.id); persist('sa_llm_provider', p.id); }}
+              disabled={isRunning}
+            >
+              <span className="llm-toggle-label">{p.label}</span>
+              <span className="llm-toggle-sub">{p.sub}</span>
+            </button>
+          ))}
         </div>
         <input
           className="text-input"
           type="password"
-          placeholder="nvapi-..."
-          value={groqKey}
-          onChange={e => { setGroqKey(e.target.value); persist('sa_nvidia_key', e.target.value); }}
+          placeholder={provider.placeholder}
+          value={activeKey}
+          onChange={e => { setActiveKey(e.target.value); persist(provider.storageKey, e.target.value); }}
           disabled={isRunning}
+          style={{ marginTop: 6 }}
         />
       </div>
     </div>

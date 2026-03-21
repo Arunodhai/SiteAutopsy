@@ -16,12 +16,16 @@ export default defineConfig({
         target: 'https://integrate.api.nvidia.com',
         changeOrigin: true,
         rewrite: path => path.replace(/^\/nvidia-api/, ''),
-        // Forward NVCF polling headers through
         configure: (proxy) => {
           proxy.on('proxyRes', (proxyRes, req, res) => {
             res.setHeader('Access-Control-Expose-Headers', 'NVCF-ReqId, Location');
           });
         },
+      },
+      '/groq-api': {
+        target: 'https://api.groq.com',
+        changeOrigin: true,
+        rewrite: path => path.replace(/^\/groq-api/, ''),
       },
     },
   },

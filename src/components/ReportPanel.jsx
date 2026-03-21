@@ -13,6 +13,30 @@ const DIFF_CLASS = {
   Hard:   'diff-hard',
 };
 
+function TopFixes({ fixes }) {
+  return (
+    <div>
+      <div className="right-label">Top Fixes</div>
+      <div className="fixes-list">
+        {fixes.map((item, i) => {
+          const fix     = typeof item === 'string' ? item : item.fix;
+          const diff    = typeof item === 'object' ? item.difficulty : null;
+          const diffKey = diff ? diff.toLowerCase() : '';
+          return (
+            <div key={i} className={`fix-card fix-card-${diffKey}`}>
+              <div className="fix-card-header">
+                <span className="fix-card-num">{i + 1}</span>
+                {diff && <span className={`diff-badge ${DIFF_CLASS[diff] || ''}`}>{diff}</span>}
+              </div>
+              <div className="fix-card-text">{fix}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function ScoreRing({ score }) {
   const r = 40, cx = 45, cy = 45;
   const circ = 2 * Math.PI * r;
@@ -144,24 +168,53 @@ export default function ReportPanel({ issues, report, status, domain, stats }) {
           const rawScore = report?.score ?? (isDone && issues.length > 0
             ? Math.max(0, 100 - crits * 15 - warnings * 5)
             : null);
+
+          const scoreColor = rawScore === null ? '#22c55e'
+            : rawScore >= 80 ? '#22c55e'
+            : rawScore >= 50 ? '#f5c542'
+            : '#ff4444';
+          const scoreBg = rawScore === null ? '#22c55e11'
+            : rawScore >= 80 ? '#22c55e11'
+            : rawScore >= 50 ? '#f5c54211'
+            : '#ff444411';
+          const scoreBorder = rawScore === null ? '#22c55e55'
+            : rawScore >= 80 ? '#22c55e55'
+            : rawScore >= 50 ? '#f5c54255'
+            : '#ff444455';
+          const scoreDivider = rawScore === null ? '#22c55e22'
+            : rawScore >= 80 ? '#22c55e22'
+            : rawScore >= 50 ? '#f5c54222'
+            : '#ff444422';
+          const summaryColor = rawScore === null ? '#3a5c42'
+            : rawScore >= 80 ? '#3a5c42'
+            : rawScore >= 50 ? '#7a6a30'
+            : '#7a3a3a';
+
           return rawScore !== null ? (
-            <div className="score-box">
-              <div className="score-ring-wrap">
-                <ScoreRing score={rawScore} />
-                <div>
-                  <div className="winner-header-label">SEO Score{!report ? ' (estimated)' : ''}</div>
-                  <div className="winner-value">{rawScore}/100</div>
-                  <div className="score-meta">
-                    <span>{crits}</span> critical &nbsp;·&nbsp;
-                    <span>{warnings}</span> warnings
+            <div className="score-box" style={{ borderColor: scoreBorder, background: 'transparent', padding: 0, overflow: 'hidden' }}>
+              {/* Coloured top — ring + score */}
+              <div style={{ background: scoreBg, padding: 16 }}>
+                <div className="score-ring-wrap">
+                  <ScoreRing score={rawScore} />
+                  <div>
+                    <div className="winner-header-label" style={{ color: scoreColor }}>SEO Score{!report ? ' (estimated)' : ''}</div>
+                    <div className="winner-value" style={{ color: scoreColor }}>{rawScore}/100</div>
+                    <div className="score-meta" style={{ color: summaryColor }}>
+                      <span style={{ color: scoreColor }}>{crits}</span> critical &nbsp;·&nbsp;
+                      <span style={{ color: scoreColor }}>{warnings}</span> warnings
+                    </div>
                   </div>
                 </div>
               </div>
-              <hr className="score-divider" />
-              <div className="score-meta-row">
-                <span className="score-meta">Pages scanned</span>
-                <span className="score-meta"><span>{stats.crawled}</span></span>
-              </div>
+              {/* Plain summary below */}
+              {report?.executiveSummary && (
+                <>
+                  <hr className="score-divider" style={{ borderTopColor: scoreDivider, margin: 0 }} />
+                  <div style={{ padding: 16, fontSize: 11, color: '#555', lineHeight: 1.7, fontWeight: 300 }}>
+                    {report.executiveSummary}
+                  </div>
+                </>
+              )}
             </div>
           ) : (
             <div className="score-box" style={{ textAlign: 'center', padding: 26 }}>
@@ -177,35 +230,9 @@ export default function ReportPanel({ issues, report, status, domain, stats }) {
         })()}
       </div>
 
-      {/* AI Summary */}
-      {report && (
-        <div>
-          <div className="right-label">AI Summary</div>
-          <div className="summary-text-block">{report.executiveSummary}</div>
-        </div>
-      )}
-
-      {/* Top Fixes — card layout */}
+      {/* Top Fixes — collapsible */}
       {report && (report.top3Fixes || []).length > 0 && (
-        <div>
-          <div className="right-label">Top Fixes</div>
-          <div className="fixes-list">
-            {(report.top3Fixes || []).map((item, i) => {
-              const fix = typeof item === 'string' ? item : item.fix;
-              const diff = typeof item === 'object' ? item.difficulty : null;
-              const diffKey = diff ? diff.toLowerCase() : '';
-              return (
-                <div key={i} className={`fix-card fix-card-${diffKey}`}>
-                  <div className="fix-card-header">
-                    <span className="fix-card-num">{i + 1}</span>
-                    {diff && <span className={`diff-badge ${DIFF_CLASS[diff] || ''}`}>{diff}</span>}
-                  </div>
-                  <div className="fix-card-text">{fix}</div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+        <TopFixes fixes={report.top3Fixes} />
       )}
 
       {/* Issues by page (accordion) */}

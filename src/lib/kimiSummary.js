@@ -31,6 +31,15 @@ function parseContent(data) {
 }
 
 export async function kimiSummary(issues, domain, apiKey, signal) {
+  // Only send non-OK issues, compact format, capped to avoid prompt size timeouts
+  const nonOk = issues
+    .filter(i => i.sev !== 'OK')
+    .slice(0, 60)
+    .map(i => `${i.sev}|${i.path || '/'}|${i.msg}`);
+
+  const crits    = issues.filter(i => i.sev === 'CRITICAL').length;
+  const warnings = issues.filter(i => i.sev === 'WARNING').length;
+
   const res = await fetch(INFER_URL, {
     method: 'POST',
     signal,
@@ -40,28 +49,21 @@ export async function kimiSummary(issues, domain, apiKey, signal) {
     },
     body: JSON.stringify({
       model: 'moonshotai/kimi-k2.5',
-      max_tokens: 1024,
+      max_tokens: 512,
       temperature: 0.6,
       top_p: 1,
       stream: false,
       chat_template_kwargs: { thinking: false },
       messages: [{
         role: 'user',
-        content: `You are an SEO analyst. Issues found on ${domain}:
-${JSON.stringify(issues, null, 2)}
+        content: `SEO audit for ${domain}. ${crits} critical, ${warnings} warnings.
+Issues (sev|path|message):
+${nonOk.join('\n')}
 
-Respond ONLY with valid JSON, no markdown, no code blocks:
-{
-  "executiveSummary": "2 sentence summary",
-  "top3Fixes": [
-    {"fix": "specific actionable fix", "difficulty": "Easy"},
-    {"fix": "specific actionable fix", "difficulty": "Medium"},
-    {"fix": "specific actionable fix", "difficulty": "Hard"}
-  ],
-  "score": <0-100>
-}
-difficulty must be exactly "Easy", "Medium", or "Hard".
-Score: start at 100, subtract 15 per CRITICAL issue and 5 per WARNING, minimum 0.`,
+Reply ONLY with valid JSON, no markdown:
+{"executiveSummary":"2 sentences","top3Fixes":[{"fix":"...","difficulty":"Easy"},{"fix":"...","difficulty":"Medium"},{"fix":"...","difficulty":"Hard"}],"score":0}
+Replace score with 0-100 integer (start 100, minus 15 per CRITICAL, minus 5 per WARNING).
+difficulty must be exactly Easy, Medium, or Hard.`,
       }],
     }),
   });

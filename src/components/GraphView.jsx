@@ -62,7 +62,7 @@ function Legend() {
   );
 }
 
-export default function GraphView({ graphData, isBuilding }) {
+export default function GraphView({ graphData, isBuilding, isActive }) {
   const containerRef = useRef(null);
   const fgRef        = useRef(null);
   const [dims, setDims]         = useState({ w: 800, h: 500 });
@@ -145,8 +145,22 @@ export default function GraphView({ graphData, isBuilding }) {
     }
 
     fg.d3ReheatSimulation();
-    requestAnimationFrame(() => fg.zoomToFit(0, 60));
   }, [graphData]);
+
+  // After simulation settles, force-center the graph (covers case where tab is already visible)
+  useEffect(() => {
+    if (!graphData) return;
+    // 150 ticks × ~16ms + buffer ≈ 2.8s
+    const t = setTimeout(() => fgRef.current?.zoomToFit(300, 60), 2800);
+    return () => clearTimeout(t);
+  }, [graphData]);
+
+  // Re-center when switching to graph tab (canvas was 0-width while hidden)
+  useEffect(() => {
+    if (!isActive || !graphData) return;
+    const t = setTimeout(() => fgRef.current?.zoomToFit(300, 60), 80);
+    return () => clearTimeout(t);
+  }, [isActive, graphData]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -171,11 +185,19 @@ export default function GraphView({ graphData, isBuilding }) {
   }, [hovered]);
 
   const handleNodeClick = useCallback((node) => {
-    setSelected(prev => prev?.id === node.id ? null : node);
-    if (fgRef.current) {
-      fgRef.current.centerAt(node.x, node.y, 500);
-      fgRef.current.zoom(4, 500);
-    }
+    setSelected(prev => {
+      const isAlreadySelected = prev?.id === node.id;
+      if (isAlreadySelected) {
+        // Deselect — zoom back out to fit all nodes
+        fgRef.current?.zoomToFit(400, 60);
+        return null;
+      } else {
+        // Select — zoom into the node
+        fgRef.current?.centerAt(node.x, node.y, 500);
+        fgRef.current?.zoom(4, 500);
+        return node;
+      }
+    });
   }, []);
 
   const gData = (() => {
@@ -497,7 +519,7 @@ export default function GraphView({ graphData, isBuilding }) {
       {/* Selected node detail panel */}
       {selected && (
         <div className="graph-node-detail">
-          <button className="graph-node-close" onClick={() => { setSelected(null); }}>✕</button>
+          <button className="graph-node-close" onClick={() => { setSelected(null); fgRef.current?.zoomToFit(400, 60); }}>✕</button>
           <div className="graph-node-detail-path">{selected.path}</div>
           <div className="graph-node-detail-url">{selected.id}</div>
           <div className="graph-node-detail-metrics">

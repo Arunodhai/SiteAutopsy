@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import GraphView from './GraphView.jsx';
+import BrandingView from './BrandingView.jsx';
+import SnapshotView from './SnapshotView.jsx';
 
 const SEV_CLASS = {
   CRITICAL: 'sev-critical',
@@ -41,10 +43,10 @@ function LogLine({ log }) {
 
 export default function Terminal({
   logs, status, url, setUrl, persist, onRun, onStop,
-  missingFcKey, missingGroqKey, graphData,
+  missingFcKey, missingGroqKey, graphData, branding, screenshot, siteSummary, rootScrape, domain,
+  activeTab, setActiveTab,
 }) {
-  const bodyRef  = useRef(null);
-  const [activeTab, setActiveTab] = useState('feed');
+  const bodyRef = useRef(null);
 
   useEffect(() => {
     if (bodyRef.current) {
@@ -66,7 +68,9 @@ export default function Terminal({
   const urlGroupCount = sections.filter(s => s.type === 'group').length;
   let urlGroupRendered = 0;
 
-  const hasGraph = graphData && graphData.nodes.length > 0;
+  const hasGraph    = graphData && graphData.nodes.length > 0;
+  const hasBranding = !!branding;
+  const hasSnapshot = !!screenshot || !!rootScrape;
 
   return (
     <>
@@ -90,10 +94,28 @@ export default function Terminal({
           )}
         </button>
 
+        <button
+          className={`tab-btn${activeTab === 'branding' ? ' tab-active' : ''}`}
+          onClick={() => setActiveTab('branding')}
+        >
+          <span className={`tab-dot ${hasBranding ? 'dot-green' : 'dot-dim'}`} />
+          Branding
+        </button>
+
+        <button
+          className={`tab-btn${activeTab === 'snapshot' ? ' tab-active' : ''}`}
+          onClick={() => setActiveTab('snapshot')}
+        >
+          <span className={`tab-dot ${hasSnapshot ? 'dot-green' : 'dot-dim'}`} />
+          Snapshot
+        </button>
+
         {/* Right side event count */}
         <span className="tab-bar-right">
           {activeTab === 'feed' && `${logs.length} events`}
           {activeTab === 'graph' && hasGraph && `${graphData.links.length} links`}
+          {activeTab === 'branding' && hasBranding && branding.domain}
+          {activeTab === 'snapshot' && hasSnapshot && domain}
         </span>
       </div>
 
@@ -153,22 +175,52 @@ export default function Terminal({
 
       {/* Graph panel — always mounted so ResizeObserver can measure; hidden when inactive */}
       <div className="graph-tab-body" style={{ display: activeTab === 'graph' ? 'flex' : 'none', flexDirection: 'column' }}>
-        <GraphView graphData={graphData} isBuilding={isRunning} />
+        <GraphView graphData={graphData} isBuilding={isRunning} isActive={activeTab === 'graph'} />
+      </div>
+
+      {/* Branding panel */}
+      <div className="branding-tab-body" style={{ display: activeTab === 'branding' ? 'flex' : 'none', flexDirection: 'column', overflow: 'auto' }}>
+        <BrandingView branding={branding} />
+      </div>
+
+      {/* Snapshot panel */}
+      <div style={{ display: activeTab === 'snapshot' ? 'flex' : 'none', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+        <SnapshotView screenshot={screenshot} siteSummary={siteSummary} rootScrape={rootScrape} domain={domain} />
       </div>
 
       {/* Chat-style input bar — always visible */}
       <div className="chat-input-bar">
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <input
-              className="text-input chat-url-input"
-              type="url"
-              placeholder="https://example.com"
-              value={url}
-              onChange={e => { setUrl(e.target.value); persist('sa_url', e.target.value); }}
-              onKeyDown={handleKey}
-              disabled={isRunning}
-            />
+            <div style={{ position: 'relative', flex: 1 }}>
+              {url && (
+                <img
+                  src={`https://www.google.com/s2/favicons?domain=${(() => { try { return new URL(url).hostname; } catch { return url; } })()}&sz=16`}
+                  alt=""
+                  style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', width: 14, height: 14, opacity: 0.6, pointerEvents: 'none' }}
+                />
+              )}
+              <input
+                className="text-input chat-url-input"
+                type="url"
+                placeholder="https://example.com"
+                value={url}
+                style={{ width: '100%', paddingLeft: url ? 32 : undefined, paddingRight: url ? 28 : undefined }}
+                onChange={e => { setUrl(e.target.value); persist('sa_url', e.target.value); }}
+                onKeyDown={handleKey}
+                disabled={isRunning}
+              />
+              {url && !isRunning && (
+                <button
+                  onClick={() => { setUrl(''); persist('sa_url', ''); }}
+                  style={{
+                    position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    color: '#333', fontSize: 12, lineHeight: 1, padding: 2,
+                  }}
+                >✕</button>
+              )}
+            </div>
             {isRunning && (
               <button className="btn-stop" onClick={onStop}>■ stop</button>
             )}

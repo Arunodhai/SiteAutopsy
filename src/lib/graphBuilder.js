@@ -98,17 +98,32 @@ export function buildGraphData(linkMap, rootUrl) {
   const deadEnds  = nodes.filter(n => n.isDeadEnd && !n.isOrphan && !n.isRoot);
   const root      = nodes.find(n => n.isRoot);
 
+  // Detect if most orphans are content-discovery paths (search, tags, shots, posts, etc.)
+  // On such sites pages are found via search/browse/infinite-scroll, not <a> links —
+  // so they look like orphans even though they're reachable.
+  const CONTENT_PATH = /^\/(shots?|search|tags?|stories|posts?|articles?|photos?|products?|collections?|categories?|explore|feed|topics?)\b/i;
+  const orphanContentRatio = orphans.length
+    ? orphans.filter(n => CONTENT_PATH.test(n.path)).length / orphans.length
+    : 0;
+  const isContentSite = orphanContentRatio >= 0.5;
+
   const insights = [];
-  if (orphans.length)
-    insights.push({ sev: 'CRITICAL', msg: `${orphans.length} orphan page${orphans.length > 1 ? 's' : ''} — not linked from anywhere` });
+  if (orphans.length) {
+    const caveat = isContentSite ? ' (may be reachable via search/browse — not a true crawl error)' : '';
+    const sev = isContentSite ? 'WARNING' : 'CRITICAL';
+    insights.push({ sev, msg: `${orphans.length} orphan page${orphans.length > 1 ? 's' : ''} — no inbound links found${caveat}` });
+  }
   if (deepPages.length)
     insights.push({ sev: 'WARNING', msg: `${deepPages.length} page${deepPages.length > 1 ? 's' : ''} more than 3 clicks from homepage` });
   if ((root?.outbound || 0) > 50)
     insights.push({ sev: 'WARNING', msg: `Homepage links to ${root.outbound} pages — consider consolidating navigation` });
   if (deadEnds.length > 2)
     insights.push({ sev: 'INFO', msg: `${deadEnds.length} dead-end pages with no outbound internal links` });
-  if (nodes.length > 3 && orphans.length / nodes.length > 0.3)
-    insights.push({ sev: 'CRITICAL', msg: `${Math.round(orphans.length / nodes.length * 100)}% of pages are orphans — poor site architecture` });
+  if (nodes.length > 3 && orphans.length / nodes.length > 0.3) {
+    const sev = isContentSite ? 'WARNING' : 'CRITICAL';
+    const caveat = isContentSite ? ' — typical for search-discovery sites' : ' — poor site architecture';
+    insights.push({ sev, msg: `${Math.round(orphans.length / nodes.length * 100)}% of pages have no inbound links${caveat}` });
+  }
 
   return { nodes, links, insights };
 }
