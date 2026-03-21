@@ -42,7 +42,9 @@ export default function App() {
   const persist = (key, val) => localStorage.setItem(key, val);
   const domain  = url ? (() => { try { return new URL(url).hostname; } catch { return url; } })() : '';
 
-  const isRunning = status === 'running';
+  const isRunning      = status === 'running';
+  const missingFcKey   = !fcKey;
+  const missingGroqKey = !(llmProvider === 'nvidia' ? nvidiaKey : groqKey);
 
   // Keyboard shortcuts
   useEffect(() => {
