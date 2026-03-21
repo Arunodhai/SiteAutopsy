@@ -175,7 +175,9 @@ export default function Terminal({
         )}
       </div>
       {graphData && graphData.nodes.length > 0 && (
-        <MiniMap nodes={graphData.nodes} links={graphData.links} />
+        <div onClick={() => setActiveTab('graph')} style={{ cursor: 'pointer' }}>
+          <MiniMap nodes={graphData.nodes} links={graphData.links} />
+        </div>
       )}
       </div>
 
