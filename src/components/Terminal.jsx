@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import GraphView, { MiniMap } from './GraphView.jsx';
-import BrandingView from './BrandingView.jsx';
-import SnapshotView from './SnapshotView.jsx';
+import SiteProfileView from './SiteProfileView.jsx';
 
 const SEV_CLASS = {
   CRITICAL: 'sev-critical',
@@ -45,7 +44,7 @@ function LogLine({ log }) {
 export default function Terminal({
   logs, status, url, setUrl, persist, onRun, onStop,
   missingFcKey, missingGroqKey, graphData, branding, screenshot, siteSummary, rootScrape, domain,
-  activeTab, setActiveTab,
+  activeTab, setActiveTab, report,
 }) {
   const bodyRef   = useRef(null);
   const [filter, setFilter] = useState('ALL');
@@ -100,6 +99,7 @@ export default function Terminal({
         <button className={`tab-btn${activeTab === 'profile' ? ' tab-active' : ''}`} onClick={() => setActiveTab('profile')}>
           <span className={`tab-dot ${hasProfile ? 'dot-green' : 'dot-dim'}`} />
           Site Profile
+          {report?.score != null && <span className="tab-badge">{report.score}</span>}
         </button>
 
         <span className="tab-bar-right">
@@ -186,14 +186,15 @@ export default function Terminal({
         <GraphView graphData={graphData} isBuilding={isRunning} isActive={activeTab === 'graph'} />
       </div>
 
-      {/* Site Profile panel — branding left + snapshot right */}
-      <div className="profile-split" style={{ display: activeTab === 'profile' ? 'flex' : 'none' }}>
-        <div className="profile-split-left">
-          <BrandingView branding={branding} />
-        </div>
-        <div className="profile-split-right">
-          <SnapshotView screenshot={screenshot} siteSummary={siteSummary} rootScrape={rootScrape} domain={domain} />
-        </div>
+      {/* Site Profile panel — single stacked column */}
+      <div style={{ display: activeTab === 'profile' ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column' }}>
+        <SiteProfileView
+          branding={branding}
+          screenshot={screenshot}
+          siteSummary={siteSummary}
+          rootScrape={rootScrape}
+          domain={domain}
+        />
       </div>
 
       {/* URL input bar — pinned to bottom */}

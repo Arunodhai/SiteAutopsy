@@ -339,6 +339,7 @@ export default function App() {
             domain={domain}
             activeTab={activeTab}
             setActiveTab={setActiveTab}
+            report={report}
           />
         </div>
 

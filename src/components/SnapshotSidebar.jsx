@@ -1,17 +1,5 @@
 import { detectTechStack, categoryStyle } from '../lib/techStack.js';
 
-function Signal({ label, value, ok }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 10, padding: '2px 0' }}>
-      <span style={{ color: ok ? '#22c55e' : '#ff4444', fontWeight: 600, width: 12, flexShrink: 0 }}>
-        {ok ? '✓' : '✗'}
-      </span>
-      <span style={{ color: '#666', flex: 1 }}>{label}</span>
-      {value && <span style={{ fontSize: 8, color: '#ff4444', letterSpacing: '0.08em', textTransform: 'uppercase' }}>{value}</span>}
-    </div>
-  );
-}
-
 export default function SnapshotSidebar({ rootScrape }) {
   if (!rootScrape) {
     return (
@@ -43,9 +31,7 @@ export default function SnapshotSidebar({ rootScrape }) {
   const passCount  = signals.filter(s => s.ok).length;
   const scoreColor = passCount >= 8 ? '#22c55e' : passCount >= 5 ? '#f5c542' : '#ff4444';
 
-  const title       = meta.title || meta.ogTitle || '';
-  const description = meta.description || meta.ogDescription || '';
-  const ogImage     = meta.ogImage || '';
+  const title = meta.title || meta.ogTitle || '';
 
   return (
     <div className="sidebar-inner">
@@ -53,17 +39,18 @@ export default function SnapshotSidebar({ rootScrape }) {
       {/* Page Identity */}
       <div>
         <div className="sidebar-section-label">Page Identity</div>
-        {title && (
-          <div style={{ marginBottom: 8 }}>
-            <div style={{ fontSize: 8, color: '#444', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 3 }}>Title</div>
-            <div style={{ fontSize: 10, color: '#c8c8c8', lineHeight: 1.5 }}>{title}</div>
+        {title ? (
+          <div style={{
+            fontSize: 10,
+            color: '#c8c8c8',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}>
+            {title}
           </div>
-        )}
-        {description && (
-          <div>
-            <div style={{ fontSize: 8, color: '#444', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 3 }}>Desc</div>
-            <div style={{ fontSize: 10, color: '#888', lineHeight: 1.5 }}>{description}</div>
-          </div>
+        ) : (
+          <div style={{ fontSize: 10, color: '#2a2a2a' }}>No title</div>
         )}
       </div>
 
@@ -73,19 +60,21 @@ export default function SnapshotSidebar({ rootScrape }) {
         {stack.length === 0 ? (
           <div style={{ fontSize: 10, color: '#2a2a2a' }}>Nothing detected</div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
             {stack.map((tech, i) => {
               const s = categoryStyle(tech.category);
               return (
                 <div key={i} style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '4px 7px', borderRadius: 2, border: `1px solid ${s.border}`,
-                  background: s.bg, color: s.color, fontSize: 10, fontWeight: 500,
+                  padding: '2px 7px',
+                  borderRadius: 2,
+                  border: `1px solid ${s.border}`,
+                  background: s.bg,
+                  color: s.color,
+                  fontSize: 9,
+                  fontWeight: 500,
+                  letterSpacing: '0.06em',
                 }}>
                   {tech.name}
-                  <span style={{ fontSize: 8, opacity: 0.6, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-                    {tech.category}
-                  </span>
                 </div>
               );
             })}
@@ -101,8 +90,20 @@ export default function SnapshotSidebar({ rootScrape }) {
             {passCount}/10
           </span>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {signals.map((s, i) => <Signal key={i} {...s} />)}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 3 }}>
+          {signals.map((s, i) => (
+            <div
+              key={i}
+              title={s.label}
+              style={{
+                height: 20,
+                borderRadius: 2,
+                cursor: 'default',
+                background: s.ok ? '#22c55e22' : '#ff444418',
+                border: s.ok ? '1px solid #22c55e44' : '1px solid #ff444433',
+              }}
+            />
+          ))}
         </div>
       </div>
 

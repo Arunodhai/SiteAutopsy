@@ -52,22 +52,49 @@ function TopFixes({ fixes }) {
   );
 }
 
-function ScoreRing({ score }) {
-  const r = 40, cx = 45, cy = 45;
-  const circ = 2 * Math.PI * r;
-  const offset = circ - (score / 100) * circ;
-  const ringColor = score >= 80 ? '#22c55e' : score >= 50 ? '#f5c542' : '#ff4444';
+function ScoreBar({ score }) {
+  const color = score >= 80 ? '#22c55e' : score >= 50 ? '#f5c542' : '#ff4444';
+  const pct = Math.max(0, Math.min(100, score));
   return (
-    <svg width="90" height="90" viewBox="0 0 90 90">
-      <circle r={r} cx={cx} cy={cy} fill="none" stroke="#1a1a1a" strokeWidth={5} />
-      <circle r={r} cx={cx} cy={cy} fill="none" stroke={ringColor} strokeWidth={5}
-        strokeDasharray={circ} strokeDashoffset={offset}
-        transform="rotate(-90 45 45)" strokeLinecap="butt" />
-      <text x={cx} y={cy + 5} textAnchor="middle" fill={ringColor}
-        fontSize="16" fontWeight="300" fontFamily="'JetBrains Mono', monospace">
-        {score}
-      </text>
-    </svg>
+    <div style={{ marginTop: 10, marginBottom: 4 }}>
+      {/* Track */}
+      <div style={{ position: 'relative', height: 5, borderRadius: 2, background: '#111', overflow: 'visible' }}>
+        {/* Gradient fill */}
+        <div style={{
+          position: 'absolute', top: 0, left: 0, height: '100%',
+          width: `${pct}%`, borderRadius: 2,
+          background: `linear-gradient(to right, #ff4444, ${color})`,
+          transition: 'width 0.4s ease',
+        }} />
+        {/* Marker tick */}
+        <div style={{
+          position: 'absolute', top: -3, left: `${pct}%`,
+          transform: 'translateX(-50%)',
+          width: 2, height: 11,
+          background: color, borderRadius: 1,
+        }} />
+      </div>
+      {/* Scale labels */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 5 }}>
+        <span style={{ fontSize: 8, color: '#ff444466', letterSpacing: '0.08em' }}>0</span>
+        <span style={{ fontSize: 8, color: '#f5c54266', letterSpacing: '0.08em' }}>50</span>
+        <span style={{ fontSize: 8, color: '#22c55e66', letterSpacing: '0.08em' }}>100</span>
+      </div>
+    </div>
+  );
+}
+
+function PageIssuebar({ crits, warnings }) {
+  const total = Math.max(crits + warnings, 1);
+  const critW = Math.round((crits / total) * 100);
+  const warnW = Math.round((warnings / total) * 100);
+  return (
+    <div style={{ width: 36, height: 3, background: '#1a1a1a', borderRadius: 1, overflow: 'hidden', flexShrink: 0 }}>
+      <div style={{ display: 'flex', height: '100%' }}>
+        <div style={{ width: `${critW}%`, background: '#ff4444' }} />
+        <div style={{ width: `${warnW}%`, background: '#f5c542' }} />
+      </div>
+    </div>
   );
 }
 
@@ -304,29 +331,37 @@ export default function ReportPanel({ issues, report, status, domain, stats }) {
             : '#7a3a3a';
 
           return rawScore !== null ? (
-            <div className="score-box" style={{ borderColor: scoreBorder, background: 'transparent', padding: 0, overflow: 'hidden' }}>
-              {/* Coloured top — ring + score */}
-              <div style={{ background: scoreBg, padding: 16 }}>
-                <div className="score-ring-wrap">
-                  <ScoreRing score={rawScore} />
-                  <div>
-                    <div className="winner-header-label" style={{ color: scoreColor }}>SEO Score{!report ? ' (estimated)' : ''}</div>
-                    <div className="winner-value" style={{ color: scoreColor }}>{rawScore}/100</div>
-                    <div className="score-meta" style={{ color: summaryColor }}>
-                      <span style={{ color: scoreColor }}>{crits}</span> critical &nbsp;·&nbsp;
-                      <span style={{ color: scoreColor }}>{warnings}</span> warnings
-                    </div>
+            <div className="score-box" style={{ borderColor: scoreBorder, background: scoreBg, padding: 16 }}>
+              {/* Score number + label */}
+              <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12 }}>
+                <div>
+                  <div className="winner-header-label" style={{ color: scoreColor }}>
+                    SEO Score{!report ? ' (estimated)' : ''}
+                  </div>
+                  <div style={{ fontSize: 36, fontWeight: 300, color: scoreColor, lineHeight: 1, marginTop: 4 }}>
+                    {rawScore}
+                    <span style={{ fontSize: 16, color: scoreColor + '55', marginLeft: 3 }}>/100</span>
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right', paddingBottom: 2 }}>
+                  <div style={{ fontSize: 9, color: '#ff4444', letterSpacing: '0.08em', marginBottom: 3 }}>
+                    {crits} CRITICAL
+                  </div>
+                  <div style={{ fontSize: 9, color: '#f5c542', letterSpacing: '0.08em' }}>
+                    {warnings} WARNINGS
                   </div>
                 </div>
               </div>
-              {/* Plain summary below */}
+              {/* Gradient bar */}
+              <ScoreBar score={rawScore} />
+              {/* Summary */}
               {report?.executiveSummary && (
-                <>
-                  <hr className="score-divider" style={{ borderTopColor: scoreDivider, margin: 0 }} />
-                  <div style={{ padding: 16, fontSize: 11, color: '#555', lineHeight: 1.7, fontWeight: 300 }}>
-                    {report.executiveSummary}
-                  </div>
-                </>
+                <div style={{
+                  marginTop: 12, paddingTop: 12, borderTop: `1px solid ${scoreDivider}`,
+                  fontSize: 11, color: summaryColor, lineHeight: 1.7, fontWeight: 300,
+                }}>
+                  {report.executiveSummary}
+                </div>
               )}
             </div>
           ) : (
@@ -375,11 +410,9 @@ export default function ReportPanel({ issues, report, status, domain, stats }) {
                         {path}
                       </span>
 
-                      {/* Right side: mini ring + severity badges + arrow */}
+                      {/* Right side: bar + badges + arrow */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
-                        {/* Mini score ring — Change 6 */}
-                        <MiniScoreRing score={pageScore} />
-
+                        <PageIssuebar crits={data.crits} warnings={data.warnings} />
                         {data.crits > 0 && (
                           <span className="badge badge-critical">{data.crits}c</span>
                         )}

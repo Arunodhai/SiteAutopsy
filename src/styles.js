@@ -35,6 +35,25 @@ body {
   justify-content: space-between;
   padding: 0 28px;
 }
+.header::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(255,255,255,0.012) 2px,
+    rgba(255,255,255,0.012) 4px
+  );
+  pointer-events: none;
+}
+.header { position: relative; }
+
+.profile-view-scroll::-webkit-scrollbar       { width: 3px; }
+.profile-view-scroll::-webkit-scrollbar-track { background: transparent; }
+.profile-view-scroll::-webkit-scrollbar-thumb { background: #1a1a1a; border-radius: 2px; }
+
 .header-logo {
   font-size: 12px;
   font-weight: 600;
@@ -798,8 +817,8 @@ body {
   transition: color 0.15s, border-color 0.15s;
   margin-bottom: -1px;
 }
-.tab-btn:hover { color: #666; }
-.tab-active { color: #ff6b2b !important; border-bottom-color: #ff6b2b !important; }
+.tab-btn:hover { color: #666; background: #ffffff04; }
+.tab-active { color: #ff6b2b !important; border-bottom-color: #ff6b2b !important; background: #ff6b2b09 !important; }
 .tab-dot {
   width: 6px;
   height: 6px;
