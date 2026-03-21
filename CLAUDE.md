@@ -1,6 +1,6 @@
 # Site Autopsy — Claude Code Instructions
 
-A real-time SEO forensics tool. Crawls a website using Firecrawl, streams live findings to a terminal UI, and generates an AI-powered summary using Groq.
+A real-time SEO forensics tool. Crawls a website using Firecrawl, streams live findings to a terminal UI, and generates an AI-powered summary via NVIDIA (Kimi K2.5) or Groq (Llama 3.3).
 
 ---
 
@@ -24,17 +24,34 @@ npm run dev
 
 ```
 src/
-  App.jsx            ← root, holds all state
+  App.jsx                    ← root, holds ALL state (including activeTab)
   components/
-    InputPanel.jsx   ← URL + API key inputs + RUN button
-    Terminal.jsx     ← live streaming log feed
-    Sidebar.jsx      ← left stats (pages crawled, issues found, etc.)
-    ReportPanel.jsx  ← right panel, score ring + issue list + Groq summary
+    InputPanel.jsx           ← API key inputs (FC + NVIDIA/Groq toggle)
+    Terminal.jsx             ← center pane: tabs (Live Feed/Graph/Branding/Snapshot) + URL input bar
+    Sidebar.jsx              ← left sidebar: status, scan stats, history
+    SnapshotSidebar.jsx      ← replaces left sidebar when Snapshot tab is active
+    ReportPanel.jsx          ← right panel: score ring, top fixes, issues by page
+    GraphView.jsx            ← force-directed internal link graph (react-force-graph-2d)
+    BrandingView.jsx         ← brand colors, fonts, OG image (Firecrawl v2 branding API)
+    SnapshotView.jsx         ← full-page screenshot + site summary (center pane, full width)
   lib/
-    checks.js        ← pure SEO check functions (no API)
-    groqSummary.js   ← Groq API call for final summary
-  styles.js          ← all CSS as template literal (single source of truth)
+    checks.js                ← pure SEO check functions → Issue[]
+    firecrawl.js             ← mapUrl, scrapeUrl, scrapeBranding, scrapeSnapshot (v1+v2)
+    groqSummary.js           ← Groq Llama 3.3 AI summary
+    kimiSummary.js           ← NVIDIA Kimi K2.5 AI summary with 202 async polling
+    graphBuilder.js          ← buildGraphData + normaliseUrl
+    techStack.js             ← detectTechStack from HTML signatures (30+ technologies)
+  styles.js                  ← ALL CSS as single template literal — single source of truth
 ```
+
+## Key Architectural Decisions
+
+- `activeTab` state lives in `App.jsx` (lifted from Terminal) so the left sidebar can swap between normal view and SnapshotSidebar
+- History is always saved after scan completes, even if AI summary fails (uses estimated score as fallback)
+- Branding + screenshot/summary fetched in parallel via `Promise.allSettled` after scan
+- Firecrawl v1 for scraping/mapping, v2 for branding + snapshot
+- NVIDIA Kimi K2.5 uses 202 async polling pattern (up to 2 min timeout)
+- Graph orphan detection: content-discovery paths (shots/search/tags) downgraded from CRITICAL to WARNING
 
 ---
 

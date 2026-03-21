@@ -13,6 +13,21 @@ const DIFF_CLASS = {
   Hard:   'diff-hard',
 };
 
+// Severity sort order for grouped expanded view
+const SEV_ORDER = { CRITICAL: 0, WARNING: 1, INFO: 2, OK: 3 };
+
+const SEV_DIVIDER_COLOR = {
+  CRITICAL: '#ff4444',
+  WARNING:  '#f5c542',
+  INFO:     '#4a9eff',
+};
+
+const SEV_DIVIDER_BG = {
+  CRITICAL: '#ff444408',
+  WARNING:  '#f5c54208',
+  INFO:     '#4a9eff08',
+};
+
 function TopFixes({ fixes }) {
   return (
     <div>
@@ -53,6 +68,104 @@ function ScoreRing({ score }) {
         {score}
       </text>
     </svg>
+  );
+}
+
+// Mini 20x20 score ring shown inline in each page accordion row
+function MiniScoreRing({ score }) {
+  const r = 7, cx = 10, cy = 10;
+  const circ = 2 * Math.PI * r;
+  const offset = circ - (score / 100) * circ;
+  const ringColor = score >= 80 ? '#22c55e' : score >= 50 ? '#f5c542' : '#ff4444';
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 20 20"
+      style={{ flexShrink: 0, display: 'block' }}
+    >
+      <circle r={r} cx={cx} cy={cy} fill="none" stroke="#1e1e1e" strokeWidth={2} />
+      <circle
+        r={r} cx={cx} cy={cy}
+        fill="none"
+        stroke={ringColor}
+        strokeWidth={2}
+        strokeDasharray={circ}
+        strokeDashoffset={offset}
+        transform="rotate(-90 10 10)"
+        strokeLinecap="butt"
+      />
+    </svg>
+  );
+}
+
+// Severity-grouped expanded body for a page's issues
+function GroupedIssueBody({ pageIssues }) {
+  const groups = {};
+  pageIssues.forEach(issue => {
+    const sev = issue.sev === 'OK' ? 'INFO' : issue.sev; // merge OK into INFO visually
+    if (!groups[sev]) groups[sev] = [];
+    groups[sev].push(issue);
+  });
+
+  const orderedSevs = Object.keys(groups).sort(
+    (a, b) => (SEV_ORDER[a] ?? 99) - (SEV_ORDER[b] ?? 99)
+  );
+
+  return (
+    <div style={{ borderTop: '1px solid #1a1a1a' }}>
+      {orderedSevs.map(sev => (
+        <div key={sev}>
+          {/* Severity section divider */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '5px 12px 4px',
+              background: SEV_DIVIDER_BG[sev] ?? 'transparent',
+              borderBottom: `1px solid ${SEV_DIVIDER_COLOR[sev] ?? '#1e1e1e'}18`,
+            }}
+          >
+            <span
+              style={{
+                fontSize: 8,
+                fontWeight: 600,
+                letterSpacing: '0.12em',
+                textTransform: 'uppercase',
+                color: SEV_DIVIDER_COLOR[sev] ?? '#555',
+                fontFamily: "'JetBrains Mono', monospace",
+              }}
+            >
+              {sev}
+            </span>
+            <span
+              style={{
+                fontSize: 8,
+                color: '#333',
+                fontFamily: "'JetBrains Mono', monospace",
+              }}
+            >
+              ({groups[sev].length})
+            </span>
+          </div>
+
+          {/* Issues in this severity group */}
+          {groups[sev].map((issue, j) => (
+            <div
+              key={j}
+              className={`issue-item ${issue.sev.toLowerCase()}`}
+              style={{ paddingLeft: 20 }}
+            >
+              <span className={`badge ${SEV_BADGE[issue.sev] ?? 'badge-info'}`}>
+                {issue.sev}
+              </span>
+              <span className="issue-msg">{issue.msg}</span>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -250,11 +363,23 @@ export default function ReportPanel({ issues, report, status, domain, stats }) {
             <div className="accordion">
               {pages.map(([path, data]) => {
                 const isOpen = expanded.includes(path);
+
+                // Compute per-page mini score
+                const pageScore = Math.max(0, 100 - data.crits * 15 - data.warnings * 5);
+
                 return (
                   <div key={path} className="accordion-item">
                     <div className="accordion-header" onClick={() => toggle(path)}>
-                      <span className="accordion-path">{path}</span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                      {/* Page path label — truncated if long */}
+                      <span className="accordion-path" style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {path}
+                      </span>
+
+                      {/* Right side: mini ring + severity badges + arrow */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+                        {/* Mini score ring — Change 6 */}
+                        <MiniScoreRing score={pageScore} />
+
                         {data.crits > 0 && (
                           <span className="badge badge-critical">{data.crits}c</span>
                         )}
@@ -265,15 +390,9 @@ export default function ReportPanel({ issues, report, status, domain, stats }) {
                       </div>
                     </div>
 
+                    {/* Expanded body — severity-grouped — Change 5 */}
                     {isOpen && (
-                      <div className="accordion-body">
-                        {data.issues.map((issue, j) => (
-                          <div key={j} className={`issue-item ${issue.sev.toLowerCase()}`}>
-                            <span className={`badge ${SEV_BADGE[issue.sev]}`}>{issue.sev}</span>
-                            <span className="issue-msg">{issue.msg}</span>
-                          </div>
-                        ))}
-                      </div>
+                      <GroupedIssueBody pageIssues={data.issues} />
                     )}
                   </div>
                 );
