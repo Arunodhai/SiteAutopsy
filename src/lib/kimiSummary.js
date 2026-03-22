@@ -1,3 +1,5 @@
+import { aggregateIssues } from './aggregateIssues.js';
+
 // Proxy routes defined in vite.config.js — avoids CORS when running locally
 const INFER_URL  = '/nvidia-api/v1/chat/completions';
 const STATUS_URL = '/nvidia-api/v1/status';
@@ -31,12 +33,7 @@ function parseContent(data) {
 }
 
 export async function kimiSummary(issues, domain, apiKey, signal) {
-  // Only send non-OK issues, compact format, capped to avoid prompt size timeouts
-  const nonOk = issues
-    .filter(i => i.sev !== 'OK')
-    .slice(0, 60)
-    .map(i => `${i.sev}|${i.path || '/'}|${i.msg}`);
-
+  const aggregated = aggregateIssues(issues);
   const crits    = issues.filter(i => i.sev === 'CRITICAL').length;
   const warnings = issues.filter(i => i.sev === 'WARNING').length;
 
@@ -56,13 +53,12 @@ export async function kimiSummary(issues, domain, apiKey, signal) {
       chat_template_kwargs: { thinking: false },
       messages: [{
         role: 'user',
-        content: `SEO audit for ${domain}. ${crits} critical, ${warnings} warnings.
-Issues (sev|path|message):
-${nonOk.join('\n')}
+        content: `SEO audit for ${domain}. ${crits} critical, ${warnings} warnings across ${issues.length} total findings.
+Issues (sev|affected pages|message):
+${aggregated.join('\n')}
 
 Reply ONLY with valid JSON, no markdown:
-{"executiveSummary":"2 sentences","top3Fixes":[{"fix":"...","difficulty":"Easy"},{"fix":"...","difficulty":"Medium"},{"fix":"...","difficulty":"Hard"}],"score":0}
-Replace score with 0-100 integer (start 100, minus 15 per CRITICAL, minus 5 per WARNING).
+{"executiveSummary":"2 sentences","siteSummary":"1 sentence describing what this website is and who it serves","top3Fixes":[{"fix":"...","difficulty":"Easy"},{"fix":"...","difficulty":"Medium"},{"fix":"...","difficulty":"Hard"}]}
 difficulty must be exactly Easy, Medium, or Hard.`,
       }],
     }),

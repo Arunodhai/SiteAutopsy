@@ -74,7 +74,7 @@ export default function InputPanel({
           </div>
 
           <div className="input-group">
-            <div className="input-group-label">Firecrawl</div>
+            <div className="input-group-label" style={{ marginBottom: 8 }}>Firecrawl</div>
             <input
               className="text-input"
               type="password"

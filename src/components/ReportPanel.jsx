@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { detectTechStack } from '../lib/techStack.js';
 
 const SEV_BADGE = {
   CRITICAL: 'badge-critical',
@@ -82,6 +83,51 @@ function ScoreBar({ score }) {
         <span style={{ fontSize: 7, color: '#ff444444', letterSpacing: '0.06em' }}>0</span>
         <span style={{ fontSize: 7, color: '#2a2a2a', letterSpacing: '0.06em' }}>50</span>
         <span style={{ fontSize: 7, color: '#22c55e44', letterSpacing: '0.06em' }}>100</span>
+      </div>
+    </div>
+  );
+}
+
+const CATEGORY_LABELS = {
+  onPage:      { label: 'On-Page SEO',   weight: 35 },
+  technical:   { label: 'Technical SEO',  weight: 25 },
+  content:     { label: 'Content',        weight: 20 },
+  social:      { label: 'Social',         weight: 10 },
+  performance: { label: 'Performance',    weight: 10 },
+};
+
+function ScoreBreakdown({ breakdown }) {
+  if (!breakdown) return null;
+  return (
+    <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #1a1a1a' }}>
+      <div style={{ fontSize: 8, color: '#444', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 8 }}>
+        Score Breakdown
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {Object.entries(CATEGORY_LABELS).map(([key, { label, weight }]) => {
+          const cat = breakdown[key];
+          if (!cat) return null;
+          const score = cat.score;
+          const color = score >= 80 ? '#22c55e' : score >= 50 ? '#f5c542' : '#ff4444';
+          const weighted = Math.round(score * (weight / 100));
+          return (
+            <div key={key}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
+                <span style={{ fontSize: 9, color: '#555', letterSpacing: '0.04em' }}>
+                  {label}
+                  <span style={{ color: '#333', marginLeft: 4, fontSize: 8 }}>{weight}%</span>
+                </span>
+                <span style={{ fontSize: 9, color, fontWeight: 500 }}>
+                  {score}
+                  <span style={{ color: '#333', marginLeft: 4, fontSize: 8 }}>+{weighted}pts</span>
+                </span>
+              </div>
+              <div style={{ height: 2, background: '#1a1a1a', borderRadius: 1, overflow: 'hidden' }}>
+                <div style={{ width: `${score}%`, height: '100%', background: color, borderRadius: 1, transition: 'width 0.4s ease' }} />
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -290,52 +336,395 @@ function GroupedIssueBody({ pageIssues }) {
   );
 }
 
-function generatePrintHTML(report, issues, stats, domain) {
+function generatePrintHTML({ report, issues, stats, domain, seoScore, rootScrape, branding, screenshot, siteSummary }) {
   const nonOk = issues.filter(i => i.sev !== 'OK');
-  const scoreColor = report.score >= 80 ? '#22c55e' : report.score >= 50 ? '#f5c542' : '#ff4444';
-  const fixes = report.top3Fixes || [];
+  const score = seoScore?.score ?? 0;
+  const grade = seoScore?.grade ?? 'F';
+  const breakdown = seoScore?.breakdown || {};
+  const fixes = report?.top3Fixes || [];
+  const crits = nonOk.filter(i => i.sev === 'CRITICAL').length;
+  const warns = nonOk.filter(i => i.sev === 'WARNING').length;
+  const infos = nonOk.filter(i => i.sev === 'INFO').length;
+
+  const scoreColor = score >= 80 ? '#22c55e' : score >= 50 ? '#e5a00d' : '#dc2626';
+  const gradeBg    = score >= 80 ? '#f0fdf4' : score >= 50 ? '#fefce8' : '#fef2f2';
+  const gradeBorder= score >= 80 ? '#bbf7d0' : score >= 50 ? '#fef08a' : '#fecaca';
+
+  // Signals from root HTML
+  const html = rootScrape?.res?.rawHtml || rootScrape?.res?.html || '';
+  const meta = rootScrape?.res?.metadata || {};
+  const rootUrl = rootScrape?.url || '';
+
+  const signals = [
+    { label: 'HTTPS',           ok: rootUrl.startsWith('https://') },
+    { label: 'Viewport meta',   ok: /name=["']viewport["']/i.test(html) },
+    { label: 'Canonical tag',   ok: /rel=["']canonical["']/i.test(html) },
+    { label: 'OG image',        ok: /property=["']og:image["']/i.test(html) || !!meta.ogImage },
+    { label: 'Twitter card',    ok: /<meta[^>]+name=["']twitter:card["'][^>]*content=/i.test(html) },
+    { label: 'Structured data', ok: /application\/ld\+json/i.test(html) || /itemscope/i.test(html) },
+    { label: 'Sitemap linked',  ok: /href=["'][^"']*sitemap[^"']*["']/i.test(html) },
+    { label: 'Robots meta',     ok: /name=["']robots["']/i.test(html) },
+    { label: 'Preload hints',   ok: /rel=["']preload["']/i.test(html) },
+    { label: 'Font optimised',  ok: /font-display|preload.*font/i.test(html) },
+  ];
+  const passCount = signals.filter(s => s.ok).length;
+
+  // Tech stack
+  const allStack = html ? detectTechStack(html) : [];
+  const buildStack = allStack.filter(t => ['framework', 'cms', 'library', 'css'].includes(t.category));
+
+  // Coverage
+  const totalPages = stats.crawled || 1;
+  const countMissing = (pattern, sev = 'CRITICAL') =>
+    [...new Set(issues.filter(i => i.sev === sev && pattern.test(i.msg)).map(i => i.path))].length;
+  const coverage = [
+    { label: 'Title',       pct: Math.round(((totalPages - countMissing(/missing.*title/i)) / totalPages) * 100) },
+    { label: 'Description', pct: Math.round(((totalPages - countMissing(/missing.*desc/i)) / totalPages) * 100) },
+    { label: 'H1 tag',      pct: Math.round(((totalPages - countMissing(/missing.*h1/i)) / totalPages) * 100) },
+    { label: 'Canonical',   pct: Math.round(((totalPages - countMissing(/canonical/i, 'WARNING')) / totalPages) * 100) },
+  ];
+
+  // Group issues by page
+  const pageMap = {};
+  nonOk.forEach(issue => {
+    const key = issue.path || '/';
+    if (!pageMap[key]) pageMap[key] = { crits: 0, warnings: 0, infos: 0, issues: [] };
+    pageMap[key].issues.push(issue);
+    if (issue.sev === 'CRITICAL') pageMap[key].crits++;
+    else if (issue.sev === 'WARNING') pageMap[key].warnings++;
+    else pageMap[key].infos++;
+  });
+  const pageEntries = Object.entries(pageMap)
+    .sort((a, b) => b[1].crits - a[1].crits || b[1].warnings - a[1].warnings);
+
+  // Score breakdown categories
+  const cats = [
+    { key: 'onPage',      label: 'On-Page SEO',  weight: 35 },
+    { key: 'technical',   label: 'Technical SEO', weight: 25 },
+    { key: 'content',     label: 'Content',       weight: 20 },
+    { key: 'social',      label: 'Social',        weight: 10 },
+    { key: 'performance', label: 'Performance',   weight: 10 },
+  ];
 
   const diffColors = { Easy: '#166534', Medium: '#854d0e', Hard: '#991b1b' };
-  const diffBg    = { Easy: '#dcfce7', Medium: '#fef9c3', Hard: '#fee2e2' };
+  const diffBg     = { Easy: '#dcfce7', Medium: '#fef9c3', Hard: '#fee2e2' };
+
+  const barColor = (v) => v >= 80 ? '#22c55e' : v >= 50 ? '#e5a00d' : '#dc2626';
+  const barBg    = (v) => v >= 80 ? '#f0fdf4' : v >= 50 ? '#fefce8' : '#fef2f2';
+
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 
   return `<!DOCTYPE html><html><head>
 <meta charset="UTF-8">
-<title>Site Autopsy — ${domain}</title>
+<title>SEO Audit Report — ${domain}</title>
 <style>
-  body{font-family:'Courier New',monospace;background:#fff;color:#111;padding:40px;max-width:820px;margin:0 auto}
-  h1{font-size:18px;border-bottom:2px solid #111;padding-bottom:8px;margin-bottom:6px}
-  h2{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:#888;margin:22px 0 10px}
-  .meta{font-size:11px;color:#888;margin-bottom:20px}
-  .score{font-size:52px;font-weight:300;color:${scoreColor};line-height:1}
-  .summary{font-size:12px;line-height:1.7;background:#f5f5f5;padding:12px 16px;border-left:3px solid #111;margin:0}
-  .fix{display:flex;align-items:flex-start;gap:10px;margin-bottom:7px;font-size:12px}
-  .fix-num{color:#bbb;flex-shrink:0}
-  .diff{font-size:9px;font-weight:700;letter-spacing:.1em;padding:2px 6px;border-radius:2px;flex-shrink:0;margin-top:1px}
-  .issue{font-size:11px;padding:5px 8px;margin-bottom:3px;border-left:3px solid #ddd;display:flex;gap:8px;align-items:flex-start}
-  .issue.critical{border-color:#ff4444}.issue.warning{border-color:#f5c542}
-  .sev{font-weight:700;font-size:9px;letter-spacing:.08em;flex-shrink:0;padding-top:1px}
-  .sev.critical{color:#ff4444}.sev.warning{color:#f5c542}
-  .ipath{color:#aaa;font-size:10px;display:block;margin-top:2px}
-  @media print{body{padding:20px}}
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Inter',system-ui,sans-serif;background:#fff;color:#1a1a2e;font-size:11px;line-height:1.6}
+  .page{max-width:800px;margin:0 auto;padding:40px 48px}
+
+  /* Cover */
+  .cover{padding:48px 0 36px;border-bottom:2px solid #1a1a2e;margin-bottom:36px}
+  .cover-brand{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#888;margin-bottom:4px}
+  .cover-title{font-size:22px;font-weight:700;color:#1a1a2e;margin-bottom:6px}
+  .cover-meta{font-size:10px;color:#888;display:flex;gap:16px;flex-wrap:wrap}
+  .cover-meta span{display:flex;align-items:center;gap:4px}
+
+  /* Score hero */
+  .score-hero{display:flex;gap:32px;align-items:center;padding:28px 32px;border:1px solid ${gradeBorder};background:${gradeBg};border-radius:8px;margin-bottom:32px}
+  .score-ring{position:relative;width:100px;height:100px;flex-shrink:0}
+  .score-ring svg{width:100px;height:100px}
+  .score-num{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:28px;font-weight:700;color:${scoreColor};line-height:1}
+  .score-num small{font-size:14px;color:#aaa;font-weight:400}
+  .score-grade{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.08em;padding:3px 10px;border-radius:4px;background:${scoreColor};color:#fff;margin-bottom:8px}
+  .score-stats{display:flex;gap:20px;margin-top:8px}
+  .score-stat{text-align:center}
+  .score-stat-val{font-size:18px;font-weight:600;line-height:1}
+  .score-stat-label{font-size:8px;letter-spacing:.1em;text-transform:uppercase;color:#888;margin-top:2px}
+
+  /* Section */
+  .section{margin-bottom:28px;page-break-inside:avoid}
+  .section-title{font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#888;margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid #e5e7eb}
+
+  /* Summary box */
+  .summary-box{padding:14px 18px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;line-height:1.75;color:#334155}
+
+  /* Breakdown bars */
+  .breakdown-row{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+  .breakdown-label{font-size:10px;color:#555;width:100px;flex-shrink:0}
+  .breakdown-weight{font-size:9px;color:#aaa;width:28px;text-align:right;flex-shrink:0}
+  .breakdown-track{flex:1;height:6px;background:#f1f5f9;border-radius:3px;overflow:hidden}
+  .breakdown-fill{height:100%;border-radius:3px;transition:width .3s}
+  .breakdown-val{font-size:10px;font-weight:600;width:36px;text-align:right;flex-shrink:0}
+
+  /* Fixes */
+  .fix-card{display:flex;gap:12px;padding:12px 16px;border:1px solid #e5e7eb;border-radius:6px;margin-bottom:8px;align-items:flex-start}
+  .fix-num{font-size:16px;font-weight:300;color:#bbb;flex-shrink:0;width:20px}
+  .fix-body{flex:1}
+  .fix-text{font-size:11px;color:#334155;line-height:1.65}
+  .fix-diff{font-size:8px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;padding:2px 8px;border-radius:3px;display:inline-block;margin-top:4px}
+
+  /* Signals grid */
+  .signals-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 24px}
+  .signal-row{display:flex;align-items:center;gap:8px;padding:4px 0}
+  .signal-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  .signal-dot.pass{background:#22c55e}
+  .signal-dot.fail{background:#dc2626}
+  .signal-label{font-size:10px;color:#555;flex:1}
+  .signal-status{font-size:9px;font-weight:600;letter-spacing:.06em}
+  .signal-status.pass{color:#22c55e}
+  .signal-status.fail{color:#dc2626}
+
+  /* Coverage */
+  .coverage-row{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+  .coverage-label{font-size:10px;color:#555;width:80px;flex-shrink:0}
+  .coverage-track{flex:1;height:5px;background:#f1f5f9;border-radius:3px;overflow:hidden}
+  .coverage-fill{height:100%;border-radius:3px}
+  .coverage-val{font-size:10px;font-weight:600;width:36px;text-align:right;flex-shrink:0}
+
+  /* Tech stack */
+  .tech-tags{display:flex;flex-wrap:wrap;gap:6px}
+  .tech-tag{font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:500;padding:3px 10px;border-radius:4px;border:1px solid #e5e7eb;background:#f8fafc;color:#555}
+
+  /* Page accordion */
+  .page-section{border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;margin-bottom:6px}
+  .page-header{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:#f8fafc;border-bottom:1px solid #f1f5f9}
+  .page-path{font-family:'JetBrains Mono',monospace;font-size:10px;color:#334155;font-weight:500}
+  .page-badges{display:flex;gap:6px}
+  .page-badge{font-size:8px;font-weight:700;letter-spacing:.06em;padding:2px 6px;border-radius:3px}
+  .page-badge.critical{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}
+  .page-badge.warning{background:#fefce8;color:#a16207;border:1px solid #fef08a}
+  .page-badge.info{background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe}
+  .page-issues{padding:0}
+  .page-issue{display:flex;align-items:flex-start;gap:10px;padding:6px 14px;border-top:1px solid #f5f5f5;font-size:10px}
+  .page-issue:first-child{border-top:none}
+  .issue-sev{font-family:'JetBrains Mono',monospace;font-size:8px;font-weight:700;letter-spacing:.08em;flex-shrink:0;padding-top:1px;min-width:52px}
+  .issue-sev.critical{color:#dc2626}
+  .issue-sev.warning{color:#a16207}
+  .issue-sev.info{color:#2563eb}
+  .issue-msg{color:#555;flex:1;line-height:1.5}
+
+  /* Site summary */
+  .site-summary{font-size:11px;color:#555;line-height:1.7;font-style:italic;padding:10px 16px;background:#f8fafc;border-left:3px solid #e2e8f0;border-radius:0 6px 6px 0;margin-bottom:24px}
+
+  /* Screenshot */
+  .screenshot{border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;margin-bottom:24px;max-height:400px}
+  .screenshot img{width:100%;display:block;max-height:400px;object-fit:cover;object-position:top}
+
+  /* Branding */
+  .brand-colors{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .brand-swatch{width:28px;height:28px;border-radius:4px;border:1px solid #e5e7eb;flex-shrink:0}
+  .brand-swatch-label{font-family:'JetBrains Mono',monospace;font-size:8px;color:#888;margin-left:2px}
+  .brand-font{font-size:10px;color:#555;margin-top:4px;padding:4px 0;border-bottom:1px solid #f5f5f5}
+
+  /* Footer */
+  .footer{margin-top:40px;padding-top:16px;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center}
+  .footer-left{font-size:9px;color:#aaa;letter-spacing:.1em;text-transform:uppercase}
+  .footer-right{font-size:9px;color:#aaa}
+
+  /* Two-col layout */
+  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+
+  /* Print */
+  @media print{
+    body{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .page{padding:24px 32px}
+    .score-hero{page-break-inside:avoid}
+    .fix-card{page-break-inside:avoid}
+    .page-header{page-break-inside:avoid}
+    .page-issue{page-break-inside:avoid}
+    .two-col{page-break-inside:avoid}
+    .screenshot{page-break-before:auto;max-height:380px}
+  }
 </style>
 </head><body>
-<h1>Site Autopsy — ${domain}</h1>
-<div class="meta">Generated ${new Date().toLocaleString()} · ${stats.crawled} pages · ${nonOk.filter(i=>i.sev==='CRITICAL').length} critical · ${nonOk.filter(i=>i.sev==='WARNING').length} warnings</div>
-<div class="score">${report.score}<span style="font-size:24px;color:#ccc">/100</span></div>
-<h2>Executive Summary</h2>
-<div class="summary">${report.executiveSummary}</div>
-<h2>Top Fixes</h2>
-${fixes.map((item, i) => {
-  const fix = typeof item === 'string' ? item : item.fix;
-  const diff = typeof item === 'object' ? item.difficulty : null;
-  return `<div class="fix"><span class="fix-num">${i+1}.</span>${diff ? `<span class="diff" style="background:${diffBg[diff]};color:${diffColors[diff]}">${diff}</span>` : ''}<span>${fix}</span></div>`;
-}).join('')}
-<h2>Issues (${nonOk.length})</h2>
-${nonOk.map(issue => `<div class="issue ${issue.sev.toLowerCase()}"><span class="sev ${issue.sev.toLowerCase()}">${issue.sev}</span><span>${issue.msg}${issue.path ? `<span class="ipath">${issue.path}</span>` : ''}</span></div>`).join('')}
+<div class="page">
+
+  <!-- Cover -->
+  <div class="cover">
+    <div class="cover-brand">Site Autopsy</div>
+    <div class="cover-title">SEO Audit Report — ${domain}</div>
+    <div class="cover-meta">
+      <span>${dateStr} at ${timeStr}</span>
+      <span>${stats.crawled} pages scanned</span>
+      <span>${crits} critical</span>
+      <span>${warns} warnings</span>
+      <span>${infos} info</span>
+    </div>
+  </div>
+
+  ${siteSummary ? `<div class="site-summary">${siteSummary}</div>` : ''}
+
+  <!-- Score Hero -->
+  <div class="score-hero">
+    <div class="score-ring">
+      <svg viewBox="0 0 100 100">
+        <circle cx="50" cy="50" r="42" fill="none" stroke="#e5e7eb" stroke-width="6"/>
+        <circle cx="50" cy="50" r="42" fill="none" stroke="${scoreColor}" stroke-width="6"
+          stroke-dasharray="${2 * Math.PI * 42}"
+          stroke-dashoffset="${2 * Math.PI * 42 - (score / 100) * 2 * Math.PI * 42}"
+          transform="rotate(-90 50 50)" stroke-linecap="round"/>
+      </svg>
+      <div class="score-num">${score}<small>/100</small></div>
+    </div>
+    <div>
+      <div class="score-grade">Grade ${grade}</div>
+      <div style="font-size:12px;color:#555;line-height:1.6;margin-top:4px">
+        ${report?.executiveSummary || `${crits} critical and ${warns} warning-level issues detected across ${stats.crawled} pages.`}
+      </div>
+      <div class="score-stats">
+        <div class="score-stat"><div class="score-stat-val" style="color:#dc2626">${crits}</div><div class="score-stat-label">Critical</div></div>
+        <div class="score-stat"><div class="score-stat-val" style="color:#e5a00d">${warns}</div><div class="score-stat-label">Warnings</div></div>
+        <div class="score-stat"><div class="score-stat-val" style="color:#2563eb">${infos}</div><div class="score-stat-label">Info</div></div>
+        <div class="score-stat"><div class="score-stat-val" style="color:#22c55e">${stats.crawled}</div><div class="score-stat-label">Pages</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Score Breakdown -->
+  <div class="section">
+    <div class="section-title">Score Breakdown</div>
+    ${cats.map(({ key, label, weight }) => {
+      const val = breakdown[key]?.score ?? 0;
+      const weighted = Math.round(val * (weight / 100));
+      return `<div class="breakdown-row">
+        <div class="breakdown-label">${label}</div>
+        <div class="breakdown-weight">${weight}%</div>
+        <div class="breakdown-track"><div class="breakdown-fill" style="width:${val}%;background:${barColor(val)}"></div></div>
+        <div class="breakdown-val" style="color:${barColor(val)}">${val}</div>
+      </div>`;
+    }).join('')}
+  </div>
+
+  <!-- Two column: Signals + Coverage -->
+  <div class="two-col">
+    <div class="section">
+      <div class="section-title">Technical Signals (${passCount}/10)</div>
+      <div class="signals-grid">
+        ${signals.map(s => `<div class="signal-row">
+          <div class="signal-dot ${s.ok ? 'pass' : 'fail'}"></div>
+          <div class="signal-label">${s.label}</div>
+          <div class="signal-status ${s.ok ? 'pass' : 'fail'}">${s.ok ? 'PASS' : 'FAIL'}</div>
+        </div>`).join('')}
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">SEO Coverage</div>
+      ${coverage.map(({ label, pct }) => `<div class="coverage-row">
+        <div class="coverage-label">${label}</div>
+        <div class="coverage-track"><div class="coverage-fill" style="width:${pct}%;background:${barColor(pct)}"></div></div>
+        <div class="coverage-val" style="color:${barColor(pct)}">${pct}%</div>
+      </div>`).join('')}
+
+      ${buildStack.length > 0 ? `
+        <div style="margin-top:16px">
+          <div style="font-size:9px;color:#888;letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px">Tech Stack</div>
+          <div class="tech-tags">${buildStack.map(t => `<span class="tech-tag">${t.name}</span>`).join('')}</div>
+        </div>
+      ` : ''}
+    </div>
+  </div>
+
+  <!-- Top Fixes -->
+  ${fixes.length > 0 ? `
+    <div class="section">
+      <div class="section-title">Priority Fixes</div>
+      ${fixes.map((item, i) => {
+        const fix = typeof item === 'string' ? item : item.fix;
+        const diff = typeof item === 'object' ? item.difficulty : null;
+        return `<div class="fix-card">
+          <div class="fix-num">${i + 1}</div>
+          <div class="fix-body">
+            <div class="fix-text">${fix}</div>
+            ${diff ? `<span class="fix-diff" style="background:${diffBg[diff]};color:${diffColors[diff]}">${diff}</span>` : ''}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+  ` : ''}
+
+  ${screenshot ? `
+    <div class="section">
+      <div class="section-title">Site Screenshot</div>
+      <div class="screenshot"><img src="${screenshot}" alt="Screenshot of ${domain}"></div>
+    </div>
+  ` : ''}
+
+  ${(() => {
+    if (!branding) return '';
+    const colorEntries = branding.colors && typeof branding.colors === 'object' && !Array.isArray(branding.colors)
+      ? Object.entries(branding.colors).filter(([, v]) => typeof v === 'string' && v.startsWith('#'))
+      : Array.isArray(branding.colors) ? branding.colors.map((c, i) => [`color-${i}`, c]) : [];
+    const fontList = (branding.fonts || []).map(f => typeof f === 'string' ? f : f?.family || '').filter(Boolean);
+    if (colorEntries.length === 0 && fontList.length === 0) return '';
+    return `
+    <div class="section">
+      <div class="section-title">Brand Identity</div>
+      ${colorEntries.length > 0 ? `
+        <div style="margin-bottom:12px">
+          <div style="font-size:9px;color:#888;letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px">Colors</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px">
+            ${colorEntries.map(([name, hex]) => `
+              <div style="display:flex;align-items:center;gap:8px">
+                <div class="brand-swatch" style="background:${hex}"></div>
+                <div>
+                  <div style="font-size:9px;color:#334155;text-transform:capitalize">${name.replace(/([A-Z])/g, ' $1').trim()}</div>
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:8px;color:#aaa">${hex}</div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
+      ${fontList.length > 0 ? `
+        <div>
+          <div style="font-size:9px;color:#888;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px">Typography</div>
+          ${fontList.map(f => `<div class="brand-font">${f}</div>`).join('')}
+        </div>
+      ` : ''}
+    </div>`;
+  })()}
+
+  <!-- Issues by Page -->
+  <div class="section">
+    <div class="section-title">Issues by Page (${pageEntries.length} pages, ${nonOk.length} issues)</div>
+    ${pageEntries.length === 0 ? '<div style="text-align:center;padding:20px;color:#22c55e;font-weight:600">No issues found</div>' : ''}
+    ${pageEntries.map(([path, data]) => `
+      <div class="page-section">
+        <div class="page-header">
+          <span class="page-path">${path}</span>
+          <div class="page-badges">
+            ${data.crits > 0 ? `<span class="page-badge critical">${data.crits} Critical</span>` : ''}
+            ${data.warnings > 0 ? `<span class="page-badge warning">${data.warnings} Warning</span>` : ''}
+            ${data.infos > 0 ? `<span class="page-badge info">${data.infos} Info</span>` : ''}
+          </div>
+        </div>
+        <div class="page-issues">
+          ${data.issues.map(issue => `
+            <div class="page-issue">
+              <span class="issue-sev ${issue.sev.toLowerCase()}">${issue.sev}</span>
+              <span class="issue-msg">${issue.msg}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `).join('')}
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <div class="footer-left">Site Autopsy · SEO Forensics</div>
+    <div class="footer-right">Generated ${dateStr} at ${timeStr} · ${domain}</div>
+  </div>
+
+</div>
 </body></html>`;
 }
 
-export default function ReportPanel({ issues, report, status, domain, stats }) {
+export default function ReportPanel({ issues, report, status, domain, stats, seoScore, rootScrape, branding, screenshot, siteSummary }) {
   const [expanded, setExpanded] = useState([]);
   const isDone = status === 'done';
   const isRunning = status === 'running';
@@ -360,7 +749,9 @@ export default function ReportPanel({ issues, report, status, domain, stats }) {
     const data = {
       generatedAt: new Date().toISOString(),
       domain,
-      score: report?.score,
+      score: seoScore?.score,
+      grade: seoScore?.grade,
+      breakdown: seoScore?.breakdown,
       executiveSummary: report?.executiveSummary,
       top3Fixes: report?.top3Fixes,
       stats,
@@ -376,7 +767,7 @@ export default function ReportPanel({ issues, report, status, domain, stats }) {
 
   function handleExportPDF() {
     const w = window.open('', '_blank');
-    w.document.write(generatePrintHTML(report, issues, stats, domain));
+    w.document.write(generatePrintHTML({ report, issues, stats, domain, seoScore, rootScrape, branding, screenshot, siteSummary }));
     w.document.close();
     setTimeout(() => w.print(), 400);
   }
@@ -388,7 +779,7 @@ export default function ReportPanel({ issues, report, status, domain, stats }) {
       <div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
           <span className="right-label" style={{ marginBottom: 0 }}>Health Score</span>
-          {isDone && report && (
+          {isDone && seoScore && (
             <div style={{ display: 'flex', gap: 6 }}>
               <button className="export-btn" onClick={handleExportJSON}>↓ JSON</button>
               <button className="export-btn" onClick={handleExportPDF}>↓ PDF</button>
@@ -399,9 +790,7 @@ export default function ReportPanel({ issues, report, status, domain, stats }) {
         {(() => {
           const crits    = issues.filter(i => i.sev === 'CRITICAL').length;
           const warnings = issues.filter(i => i.sev === 'WARNING').length;
-          const rawScore = report?.score ?? (isDone && issues.length > 0
-            ? Math.max(0, 100 - crits * 15 - warnings * 5)
-            : null);
+          const rawScore = seoScore?.score ?? null;
 
           const scoreColor = rawScore === null ? '#22c55e'
             : rawScore >= 80 ? '#22c55e'
@@ -430,7 +819,7 @@ export default function ReportPanel({ issues, report, status, domain, stats }) {
               <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12 }}>
                 <div>
                   <div className="winner-header-label" style={{ color: scoreColor }}>
-                    SEO Score{!report ? ' (estimated)' : ''}
+                    SEO Score{seoScore?.grade ? ` · ${seoScore.grade}` : ''}
                   </div>
                   <div style={{ fontSize: 36, fontWeight: 300, color: scoreColor, lineHeight: 1, marginTop: 4 }}>
                     {rawScore}
@@ -448,15 +837,7 @@ export default function ReportPanel({ issues, report, status, domain, stats }) {
               </div>
               {/* Gradient bar */}
               <ScoreBar score={rawScore} />
-              {/* Summary */}
-              {report?.executiveSummary && (
-                <div style={{
-                  marginTop: 12, paddingTop: 12, borderTop: `1px solid ${scoreDivider}`,
-                  fontSize: 11, color: summaryColor, lineHeight: 1.7, fontWeight: 300,
-                }}>
-                  {report.executiveSummary}
-                </div>
-              )}
+              <ScoreBreakdown breakdown={seoScore?.breakdown} />
             </div>
           ) : (
             <div className="score-box" style={{ textAlign: 'center', padding: 26 }}>
@@ -472,19 +853,10 @@ export default function ReportPanel({ issues, report, status, domain, stats }) {
         })()}
       </div>
 
-      {/* Issue heatmap — visible as soon as we have page data */}
-      {(isDone || isRunning) && Object.keys(pageMap).length > 0 && (
-        <IssueHeatmap pageMap={pageMap} totalPages={stats.crawled || Object.keys(pageMap).length} />
-      )}
 
       {/* Top Fixes */}
       {report && (report.top3Fixes || []).length > 0 && (
         <TopFixes fixes={report.top3Fixes} />
-      )}
-
-      {/* Coverage breakdown */}
-      {isDone && stats.crawled > 0 && (
-        <CoveragePanel issues={issues} totalPages={stats.crawled} />
       )}
 
       {/* Issues by page (accordion) */}

@@ -1,3 +1,5 @@
+import { aggregateIssues } from './aggregateIssues.js';
+
 const GROQ_URL = '/groq-api/openai/v1/chat/completions';
 
 function parseContent(data) {
@@ -7,6 +9,10 @@ function parseContent(data) {
 }
 
 export async function groqSummary(issues, domain, apiKey, signal) {
+  const aggregated = aggregateIssues(issues);
+  const crits    = issues.filter(i => i.sev === 'CRITICAL').length;
+  const warnings = issues.filter(i => i.sev === 'WARNING').length;
+
   const res = await fetch(GROQ_URL, {
     method: 'POST',
     signal,
@@ -21,21 +27,13 @@ export async function groqSummary(issues, domain, apiKey, signal) {
       stream: false,
       messages: [{
         role: 'user',
-        content: `You are an SEO analyst. Issues found on ${domain}:
-${JSON.stringify(issues, null, 2)}
+        content: `SEO audit for ${domain}. ${crits} critical, ${warnings} warnings across ${issues.length} total findings.
+Issues (sev|affected pages|message):
+${aggregated.join('\n')}
 
 Respond ONLY with valid JSON, no markdown, no code blocks:
-{
-  "executiveSummary": "2 sentence summary",
-  "top3Fixes": [
-    {"fix": "specific actionable fix", "difficulty": "Easy"},
-    {"fix": "specific actionable fix", "difficulty": "Medium"},
-    {"fix": "specific actionable fix", "difficulty": "Hard"}
-  ],
-  "score": <0-100>
-}
-difficulty must be exactly "Easy", "Medium", or "Hard".
-Score: start at 100, subtract 15 per CRITICAL issue and 5 per WARNING, minimum 0.`,
+{"executiveSummary":"2 sentence summary","siteSummary":"1 sentence describing what this website is and who it serves","top3Fixes":[{"fix":"specific actionable fix","difficulty":"Easy"},{"fix":"specific actionable fix","difficulty":"Medium"},{"fix":"specific actionable fix","difficulty":"Hard"}]}
+difficulty must be exactly "Easy", "Medium", or "Hard".`,
       }],
     }),
   });

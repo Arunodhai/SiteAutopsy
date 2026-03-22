@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback, useEffect } from 'react';
+import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 
 export function MiniMap({ nodes, links }) {
@@ -158,7 +158,61 @@ function Legend() {
   );
 }
 
-export default function GraphView({ graphData, isBuilding, isActive }) {
+// Build path → {crits, warnings, topIssues[]} index from issues array
+function buildIssueIndex(issues = []) {
+  const idx = {};
+  for (const issue of issues) {
+    if (!issue.path || issue.sev === 'OK') continue;
+    if (!idx[issue.path]) idx[issue.path] = { crits: 0, warnings: 0, topIssues: [] };
+    if (issue.sev === 'CRITICAL') idx[issue.path].crits++;
+    else if (issue.sev === 'WARNING') idx[issue.path].warnings++;
+    if (idx[issue.path].topIssues.length < 2) idx[issue.path].topIssues.push(issue);
+  }
+  return idx;
+}
+
+// Find shortest path from root to a given node using links
+function pathToRoot(targetId, nodes, links) {
+  const rootNode = nodes.find(n => n.isRoot);
+  if (!rootNode || rootNode.id === targetId) return new Set([targetId]);
+
+  // Build adjacency (undirected for path finding)
+  const adj = {};
+  for (const l of links) {
+    const s = typeof l.source === 'object' ? l.source.id : l.source;
+    const t = typeof l.target === 'object' ? l.target.id : l.target;
+    if (!adj[s]) adj[s] = [];
+    if (!adj[t]) adj[t] = [];
+    adj[s].push(t);
+    adj[t].push(s);
+  }
+
+  // BFS from root to target
+  const visited = new Map(); // id → parentId
+  visited.set(rootNode.id, null);
+  const queue = [rootNode.id];
+  while (queue.length) {
+    const cur = queue.shift();
+    if (cur === targetId) break;
+    for (const nb of (adj[cur] || [])) {
+      if (!visited.has(nb)) {
+        visited.set(nb, cur);
+        queue.push(nb);
+      }
+    }
+  }
+
+  // Trace path back
+  const pathSet = new Set();
+  let cur = targetId;
+  while (cur !== null && cur !== undefined) {
+    pathSet.add(cur);
+    cur = visited.get(cur);
+  }
+  return pathSet;
+}
+
+export default function GraphView({ graphData, issues, isBuilding, isActive }) {
   const containerRef = useRef(null);
   const fgRef        = useRef(null);
   const [dims, setDims]         = useState({ w: 800, h: 500 });
@@ -167,6 +221,15 @@ export default function GraphView({ graphData, isBuilding, isActive }) {
   const [selected, setSelected] = useState(null);
   const [filterOrphans, setFilterOrphans] = useState(false);
   const [loadMsgIdx, setLoadMsgIdx]       = useState(0);
+
+  // Issue index: path → {crits, warnings, topIssues}
+  const issueIdx = useMemo(() => buildIssueIndex(issues), [issues]);
+
+  // Path-to-root node set for selected node highlighting
+  const pathSet = useMemo(() => {
+    if (!selected || !graphData) return null;
+    return pathToRoot(selected.id, graphData.nodes, graphData.links);
+  }, [selected, graphData]);
 
   useEffect(() => {
     if (graphData) return;
@@ -243,18 +306,29 @@ export default function GraphView({ graphData, isBuilding, isActive }) {
     fg.d3ReheatSimulation();
   }, [graphData]);
 
+  const fitGraph = (duration = 300) => {
+    const fg = fgRef.current;
+    if (!fg) return;
+    if (graphData?.nodes?.length === 1) {
+      fg.centerAt(0, 0, duration);
+      fg.zoom(2, duration);
+    } else {
+      fg.zoomToFit(duration, 60);
+    }
+  };
+
   // After simulation settles, force-center the graph (covers case where tab is already visible)
   useEffect(() => {
     if (!graphData) return;
     // 150 ticks × ~16ms + buffer ≈ 2.8s
-    const t = setTimeout(() => fgRef.current?.zoomToFit(300, 60), 2800);
+    const t = setTimeout(() => fitGraph(300), 2800);
     return () => clearTimeout(t);
   }, [graphData]);
 
   // Re-center when switching to graph tab (canvas was 0-width while hidden)
   useEffect(() => {
     if (!isActive || !graphData) return;
-    const t = setTimeout(() => fgRef.current?.zoomToFit(300, 60), 80);
+    const t = setTimeout(() => fitGraph(300), 80);
     return () => clearTimeout(t);
   }, [isActive, graphData]);
 
@@ -285,7 +359,7 @@ export default function GraphView({ graphData, isBuilding, isActive }) {
       const isAlreadySelected = prev?.id === node.id;
       if (isAlreadySelected) {
         // Deselect — zoom back out to fit all nodes
-        fgRef.current?.zoomToFit(400, 60);
+        fitGraph(400);
         return null;
       } else {
         // Select — zoom into the node
@@ -358,6 +432,19 @@ export default function GraphView({ graphData, isBuilding, isActive }) {
           ctx.fillStyle = vignette;
           ctx.fillRect(-W, -H, W * 2, H * 2);
 
+          // CRT scanline overlay — slow drift downward
+          const scanlineSpacing = 4 / globalScale;
+          const scanlineOffset  = ((Date.now() / 80) % scanlineSpacing);
+          const W2 = dims.w / globalScale;
+          const H2 = dims.h / globalScale;
+          ctx.save();
+          ctx.globalAlpha = 0.025;
+          ctx.fillStyle = '#000';
+          for (let y = -H2 + scanlineOffset; y < H2; y += scanlineSpacing) {
+            ctx.fillRect(-W2, y, W2 * 2, scanlineSpacing * 0.4);
+          }
+          ctx.restore();
+
           if (!graphData?.nodes?.length || graphData.nodes.length < 7) return;
           const maxD  = Math.max(...graphData.nodes.map(n => (n.depth < 99 ? n.depth : 0)), 1);
           const rStep = 230 / maxD;
@@ -409,6 +496,13 @@ export default function GraphView({ graphData, isBuilding, isActive }) {
           const len = Math.hypot(dx, dy);
           if (len === 0) return;
 
+          // Dim links whose endpoints are not on the selected path
+          const linkOnPath = !pathSet || (pathSet.has(start.id) && pathSet.has(end.id));
+          if (!linkOnPath) {
+            ctx.save();
+            ctx.globalAlpha = 0.06;
+          }
+
           const sc = nodeColor(start);
           const tc = nodeColor(end);
 
@@ -449,6 +543,7 @@ export default function GraphView({ graphData, isBuilding, isActive }) {
           ctx.closePath();
           ctx.fillStyle = tc + '66';
           ctx.fill();
+          if (!linkOnPath) ctx.restore();
         }}
         linkCanvasObjectMode={() => 'replace'}
         /* Flowing particles along edges */
@@ -466,7 +561,7 @@ export default function GraphView({ graphData, isBuilding, isActive }) {
         onNodeHover={handleNodeHover}
         onNodeClick={handleNodeClick}
         cooldownTicks={150}
-        onEngineStop={() => fgRef.current?.zoomToFit(300, 60)}
+        onEngineStop={() => fitGraph(300)}
         /* Custom node drawing */
         nodeCanvasObject={(node, ctx, globalScale) => {
           if (!isFinite(node.x) || !isFinite(node.y)) return;
@@ -474,6 +569,32 @@ export default function GraphView({ graphData, isBuilding, isActive }) {
           const color      = nodeColor(node);
           const isSelected = selected?.id === node.id;
           const isHov      = hovered?.id  === node.id;
+
+          // Path-to-root dimming: when a node is selected, dim nodes not on the path
+          const onPath = !pathSet || pathSet.has(node.id);
+          if (!onPath) {
+            ctx.save();
+            ctx.globalAlpha = 0.12;
+          }
+
+          // SEO severity ring (drawn before glow so it's under the node)
+          const nodeIssues = issueIdx[node.path];
+          if (nodeIssues && node.isScanned !== false) {
+            const sevColor = nodeIssues.crits > 0 ? '#ff4444' : '#f5c542';
+            const t = (Date.now() % 2000) / 2000;
+            const sevPulse = nodeIssues.crits > 0
+              ? r + 5 + 2.5 * Math.sin(t * 2 * Math.PI)
+              : r + 4;
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, sevPulse, 0, 2 * Math.PI);
+            ctx.strokeStyle = sevColor + (nodeIssues.crits > 0
+              ? Math.round(55 + 35 * Math.sin(t * 2 * Math.PI)).toString(16).padStart(2, '0')
+              : '44');
+            ctx.lineWidth = nodeIssues.crits > 0 ? 1.5 : 1;
+            ctx.setLineDash(nodeIssues.crits > 0 ? [] : [3, 3]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+          }
 
           // Animated pulse ring for root node
           if (node.isRoot) {
@@ -577,6 +698,9 @@ export default function GraphView({ graphData, isBuilding, isActive }) {
             node.x,
             node.y + r + fontSize + 2
           );
+
+          // Restore alpha if path-dimmed
+          if (!onPath) ctx.restore();
         }}
         nodeCanvasObjectMode={() => 'replace'}
         nodePointerAreaPaint={(node, color, ctx) => {
@@ -609,13 +733,33 @@ export default function GraphView({ graphData, isBuilding, isActive }) {
           {hovered.isOrphan  && <div className="graph-tooltip-tag" style={{ color: '#ff4444', borderColor: '#ff444433' }}>orphan</div>}
           {hovered.isDeadEnd && <div className="graph-tooltip-tag" style={{ color: '#f5c542', borderColor: '#f5c54233' }}>dead-end</div>}
           {hovered.isRoot    && <div className="graph-tooltip-tag" style={{ color: '#ff6b2b', borderColor: '#ff6b2b33' }}>root</div>}
+          {/* Issue preview */}
+          {(() => {
+            const hi = issueIdx[hovered.path];
+            if (!hi) return null;
+            return (
+              <div style={{ marginTop: 5, borderTop: '1px solid #1e1e1e', paddingTop: 5 }}>
+                {hi.topIssues.map((issue, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 5, alignItems: 'flex-start', marginBottom: 3 }}>
+                    <span style={{
+                      fontSize: 7, fontWeight: 700, letterSpacing: '0.08em', flexShrink: 0, paddingTop: 1,
+                      color: issue.sev === 'CRITICAL' ? '#ff4444' : '#f5c542',
+                    }}>
+                      {issue.sev === 'CRITICAL' ? '!' : '▲'}
+                    </span>
+                    <span style={{ fontSize: 9, color: '#888', lineHeight: 1.4 }}>{issue.msg}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
         </div>
       )}
 
       {/* Selected node detail panel */}
       {selected && (
         <div className="graph-node-detail">
-          <button className="graph-node-close" onClick={() => { setSelected(null); fgRef.current?.zoomToFit(400, 60); }}>✕</button>
+          <button className="graph-node-close" onClick={() => { setSelected(null); fitGraph(400); }}>✕</button>
           <div className="graph-node-detail-path">{selected.path}</div>
           <div className="graph-node-detail-url">{selected.id}</div>
           <div className="graph-node-detail-metrics">
@@ -632,6 +776,29 @@ export default function GraphView({ graphData, isBuilding, isActive }) {
           </div>
           {selected.isOrphan  && <div className="graph-node-tag" style={{ color: '#ff4444', borderColor: '#ff444433' }}>ORPHAN — not reachable via internal links</div>}
           {selected.isDeadEnd && !selected.isOrphan && <div className="graph-node-tag" style={{ color: '#f5c542', borderColor: '#f5c54233' }}>DEAD END — no outbound internal links</div>}
+          {/* Issue list for selected node */}
+          {(() => {
+            const si = issueIdx[selected.path];
+            if (!si) return (
+              <div style={{ fontSize: 8, color: '#22c55e55', letterSpacing: '0.08em', marginTop: 6 }}>NO ISSUES</div>
+            );
+            return (
+              <div style={{ marginTop: 8, borderTop: '1px solid #1a1a1a', paddingTop: 7 }}>
+                <div style={{ fontSize: 8, color: '#333', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 5 }}>
+                  {si.crits > 0 && <span style={{ color: '#ff4444', marginRight: 8 }}>{si.crits} critical</span>}
+                  {si.warnings > 0 && <span style={{ color: '#f5c542' }}>{si.warnings} warnings</span>}
+                </div>
+                {si.topIssues.map((issue, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 4 }}>
+                    <span style={{ fontSize: 8, fontWeight: 700, color: issue.sev === 'CRITICAL' ? '#ff4444' : '#f5c542', flexShrink: 0, paddingTop: 1 }}>
+                      {issue.sev === 'CRITICAL' ? '!' : '▲'}
+                    </span>
+                    <span style={{ fontSize: 9, color: '#666', lineHeight: 1.4 }}>{issue.msg}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
         </div>
       )}
 

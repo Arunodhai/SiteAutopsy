@@ -1,4 +1,4 @@
-export default function SiteProfileView({ branding, screenshot, siteSummary, rootScrape, domain }) {
+export default function SiteProfileView({ branding, screenshot, siteSummary, rootScrape, domain, status }) {
   if (!branding && !screenshot && !siteSummary && !rootScrape) {
     return (
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -76,7 +76,7 @@ export default function SiteProfileView({ branding, screenshot, siteSummary, roo
         ) : (
           <div style={{ height: '100%', minHeight: 180, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <span style={{ fontSize: 9, color: '#2a2a2a', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
-              screenshot loading...
+              {status === 'done' ? 'screenshot unavailable' : status === 'running' ? 'screenshot loading...' : 'run a scan to see screenshot'}
             </span>
           </div>
         )}

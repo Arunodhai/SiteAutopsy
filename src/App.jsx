@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { mapUrl, scrapeUrl, scrapeBranding, scrapeSnapshot } from './lib/firecrawl.js';
 import styles from './styles.js';
-import InputPanel from './components/InputPanel.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import SnapshotSidebar from './components/SnapshotSidebar.jsx';
 import Terminal from './components/Terminal.jsx';
@@ -10,6 +9,7 @@ import { runChecks, checkDuplicateTitles } from './lib/checks.js';
 import { kimiSummary } from './lib/kimiSummary.js';
 import { groqSummary } from './lib/groqSummary.js';
 import { buildGraphData, normaliseUrl } from './lib/graphBuilder.js';
+import { calculateSeoScore } from './lib/seoScore.js';
 
 export default function App() {
   const [url, setUrl]             = useState(() => localStorage.getItem('sa_url') || '');
@@ -32,6 +32,7 @@ export default function App() {
   const [siteSummary, setSiteSummary]   = useState(null);
   const [rootScrape, setRootScrape]     = useState(null);
   const [activeTab, setActiveTab]       = useState('feed');
+  const [seoScore, setSeoScore]         = useState(null);
 
   const startTimeRef  = useRef(null);
   const abortRef      = useRef(null);
@@ -96,6 +97,7 @@ export default function App() {
     setScreenshot(null);
     setSiteSummary(null);
     setRootScrape(null);
+    setSeoScore(null);
     rootScrapeRef.current = null;
     setStats({ crawled: 0, total: 0, crits: 0, warnings: 0 });
     startTimeRef.current = Date.now();
@@ -113,46 +115,52 @@ export default function App() {
     }
 
     let currentDomain;
+    let resolvedUrl = url.trim();
+    if (resolvedUrl && !/^https?:\/\//i.test(resolvedUrl)) {
+      resolvedUrl = 'https://' + resolvedUrl;
+      setUrl(resolvedUrl);
+    }
     try {
-      currentDomain = new URL(url).hostname;
+      currentDomain = new URL(resolvedUrl).hostname;
     } catch {
-      pushLog('CRITICAL', 'Invalid URL — please enter a full URL including https://');
+      pushLog('CRITICAL', 'Invalid URL — please enter a valid domain or full URL');
       setStatus('error');
       return;
     }
 
-    const rootUrl = normaliseUrl(url, currentDomain) || url;
+    const rootUrl = normaliseUrl(resolvedUrl, currentDomain) || resolvedUrl;
 
     pushLog('SYSTEM', `Initializing autopsy on ${currentDomain}`);
 
-    let urls;
+    const PAGE_LIMIT = 20;
+    const NON_HTML = /\.(xml|txt|pdf|json|rss|atom|csv|xlsx|docx|zip|png|jpg|jpeg|gif|webp|svg|ico|css|js|woff2?)$/i;
+
+    const isHtmlUrl = (u) => { try { return !NON_HTML.test(new URL(u).pathname); } catch { return true; } };
+
+    let initialUrls;
     try {
       const mapRes = await mapUrl(url, fcKey);
-      urls = (mapRes.links || [url]).slice(0, 20);
+      initialUrls = (mapRes.links || [url]).filter(isHtmlUrl).slice(0, PAGE_LIMIT);
     } catch {
       pushLog('WARNING', 'mapUrl failed — falling back to root URL only');
-      urls = [url];
+      initialUrls = [url];
     }
 
     if (controller.signal.aborted) { setStatus('done'); return; }
 
-    const NON_HTML = /\.(xml|txt|pdf|json|rss|atom|csv|xlsx|docx|zip|png|jpg|jpeg|gif|webp|svg|ico|css|js|woff2?)$/i;
-    urls = urls.filter(u => {
-      try { return !NON_HTML.test(new URL(u).pathname); } catch { return true; }
-    });
+    const queued  = new Set(initialUrls.map(u => normaliseUrl(u, currentDomain) || u));
+    const queue   = [...queued];
 
-    pushLog('SYSTEM', `Discovered ${urls.length} pages — beginning scan`);
-    setStats(s => ({ ...s, total: urls.length + (activeKey ? 1 : 0) }));
+    pushLog('SYSTEM', `Discovered ${queue.length} pages — beginning scan`);
+    setStats(s => ({ ...s, total: queue.length + (activeKey ? 1 : 0) }));
 
-    for (const u of urls) {
-      const norm = normaliseUrl(u, currentDomain) || u;
-      linkMapRef.current[norm] = [];
-    }
+    for (const norm of queued) linkMapRef.current[norm] = [];
 
     const allIssues   = [];
     const pageMetadata = [];
 
-    for (const pageUrl of urls) {
+    for (let qi = 0; qi < queue.length; qi++) {
+      const pageUrl = queue[qi];
       if (controller.signal.aborted) {
         pushLog('SYSTEM', 'Scan stopped');
         break;
@@ -238,6 +246,13 @@ export default function App() {
 
     updateGraph(rootUrl);
 
+    // Calculate deterministic SEO score
+    const rootHtml = rootScrapeRef.current?.res?.rawHtml || rootScrapeRef.current?.res?.html || '';
+    const rootMeta = rootScrapeRef.current?.res?.metadata || {};
+    const crawledCount = scannedUrls.current.length || 1;
+    const calculatedScore = calculateSeoScore(allIssues, crawledCount, rootHtml, resolvedUrl, rootMeta);
+    setSeoScore(calculatedScore);
+
     if (!controller.signal.aborted) {
       pushLog('SYSTEM', 'Extracting branding & snapshot...');
       await Promise.allSettled([
@@ -259,8 +274,9 @@ export default function App() {
           ? await groqSummary(allIssues, currentDomain, activeKey, controller.signal)
           : await kimiSummary(allIssues, currentDomain, activeKey, controller.signal);
         setReport(summary);
+        if (summary.siteSummary && !siteSummary) setSiteSummary(summary.siteSummary);
         setStats(s => ({ ...s, crawled: s.crawled + 1 }));
-        pushLog('SYSTEM', `Autopsy complete — health score: ${summary.score}/100`);
+        pushLog('SYSTEM', `Autopsy complete — health score: ${calculatedScore.score}/100`);
       } catch (err) {
         if (err.name !== 'AbortError') {
           pushLog('WARNING', `AI summary failed — ${err.message || err}`);
@@ -274,7 +290,7 @@ export default function App() {
       const warnings = allIssues.filter(i => i.sev === 'WARNING').length;
       const entry = {
         url:     currentDomain,
-        score:   summary ? summary.score : Math.max(0, 100 - crits * 15 - warnings * 5),
+        score:   calculatedScore.score,
         crits,
         warnings,
         elapsed: elapsedSec,
@@ -298,26 +314,16 @@ export default function App() {
         <span className="header-meta">seo forensics · real-time</span>
       </header>
 
-      <div className="app-layout">
+      <div className={`app-layout${activeTab === 'feed' ? ' report-wide' : ''}`}>
         {/* ── Left sidebar ── */}
         <div className="col-sidebar">
           {activeTab === 'profile' ? (
-            <SnapshotSidebar rootScrape={rootScrape} issues={issues} />
+            <SnapshotSidebar rootScrape={rootScrape} issues={issues} stats={stats} />
           ) : (
-            <>
-              <InputPanel
-                fcKey={fcKey} setFcKey={setFcKey}
-                llmProvider={llmProvider} setLlmProvider={setLlmProvider}
-                nvidiaKey={nvidiaKey} setNvidiaKey={setNvidiaKey}
-                groqKey={groqKey} setGroqKey={setGroqKey}
-                persist={persist}
-                status={status}
-              />
-              <Sidebar
-                stats={stats} status={status} elapsed={elapsed}
-                history={history} onClearHistory={clearHistory}
-              />
-            </>
+            <Sidebar
+              stats={stats} status={status} elapsed={elapsed}
+              report={report} seoScore={seoScore}
+            />
           )}
         </div>
 
@@ -332,6 +338,7 @@ export default function App() {
             missingFcKey={missingFcKey}
             missingGroqKey={missingGroqKey}
             graphData={graphData}
+            issues={issues}
             branding={branding}
             screenshot={screenshot}
             siteSummary={siteSummary}
@@ -340,6 +347,17 @@ export default function App() {
             activeTab={activeTab}
             setActiveTab={setActiveTab}
             report={report}
+            fcKey={fcKey} setFcKey={setFcKey}
+            llmProvider={llmProvider} setLlmProvider={setLlmProvider}
+            nvidiaKey={nvidiaKey} setNvidiaKey={setNvidiaKey}
+            groqKey={groqKey} setGroqKey={setGroqKey}
+            history={history}
+            onClearHistory={clearHistory}
+            onSelectHistory={(domain) => {
+              const full = domain.startsWith('http') ? domain : `https://${domain}`;
+              setUrl(full);
+              persist('sa_url', full);
+            }}
           />
         </div>
 
@@ -347,7 +365,9 @@ export default function App() {
         <div className="col-right">
           <ReportPanel
             issues={issues} report={report} status={status}
-            domain={domain} stats={stats}
+            domain={domain} stats={stats} seoScore={seoScore}
+            rootScrape={rootScrape} branding={branding}
+            screenshot={screenshot} siteSummary={siteSummary}
           />
         </div>
       </div>
