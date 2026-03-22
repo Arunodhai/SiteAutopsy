@@ -1,6 +1,27 @@
 import { detectTechStack, categoryStyle } from '../lib/techStack.js';
 
-export default function SnapshotSidebar({ rootScrape }) {
+// Short labels for each signal cell — must match signals array order
+const SIGNAL_ABBR = ['TLS', 'VIEW', 'CAN', 'OG', 'TW', 'SD', 'MAP', 'BOT', 'PRE', 'FONT'];
+
+// Build URL structure tree from issue paths
+function buildUrlTree(issues) {
+  const paths = [...new Set(
+    ['/', ...issues.map(i => i.path).filter(Boolean)]
+  )];
+
+  const segments = {};
+  paths.forEach(p => {
+    const parts = p.split('/').filter(Boolean);
+    const key = parts.length === 0 ? '/' : '/' + parts[0] + (parts.length > 1 ? '/' : '');
+    segments[key] = (segments[key] || 0) + 1;
+  });
+
+  return Object.entries(segments)
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .slice(0, 8);
+}
+
+export default function SnapshotSidebar({ rootScrape, issues = [] }) {
   if (!rootScrape) {
     return (
       <div className="sidebar-inner">
@@ -15,7 +36,10 @@ export default function SnapshotSidebar({ rootScrape }) {
   const meta = rootScrape?.res?.metadata || {};
   const url  = rootScrape?.url || '';
 
-  const stack   = detectTechStack(html);
+  // Only show build-stack tech (no analytics/infra)
+  const allStack  = detectTechStack(html);
+  const buildStack = allStack.filter(t => ['framework', 'cms', 'library', 'css'].includes(t.category));
+
   const signals = [
     { label: 'HTTPS',           ok: url.startsWith('https://') },
     { label: 'Viewport meta',   ok: /name=["']viewport["']/i.test(html) },
@@ -33,6 +57,8 @@ export default function SnapshotSidebar({ rootScrape }) {
 
   const title = meta.title || meta.ogTitle || '';
 
+  const urlTree = buildUrlTree(issues);
+
   return (
     <div className="sidebar-inner">
 
@@ -43,9 +69,11 @@ export default function SnapshotSidebar({ rootScrape }) {
           <div style={{
             fontSize: 10,
             color: '#c8c8c8',
-            whiteSpace: 'nowrap',
+            lineHeight: 1.5,
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical',
             overflow: 'hidden',
-            textOverflow: 'ellipsis',
           }}>
             {title}
           </div>
@@ -54,17 +82,17 @@ export default function SnapshotSidebar({ rootScrape }) {
         )}
       </div>
 
-      {/* Tech Stack */}
+      {/* Tech Stack — build only */}
       <div>
         <div className="sidebar-section-label">Tech Stack</div>
-        {stack.length === 0 ? (
+        {buildStack.length === 0 ? (
           <div style={{ fontSize: 10, color: '#2a2a2a' }}>Nothing detected</div>
         ) : (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-            {stack.map((tech, i) => {
+            {buildStack.map((tech, i) => {
               const s = categoryStyle(tech.category);
               return (
-                <div key={i} style={{
+                <div key={i} title={tech.category} style={{
                   padding: '2px 7px',
                   borderRadius: 2,
                   border: `1px solid ${s.border}`,
@@ -82,7 +110,7 @@ export default function SnapshotSidebar({ rootScrape }) {
         )}
       </div>
 
-      {/* Signals */}
+      {/* Signals — 5×2 grid with abbreviated labels */}
       <div>
         <div className="sidebar-section-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span>Signals</span>
@@ -96,16 +124,47 @@ export default function SnapshotSidebar({ rootScrape }) {
               key={i}
               title={s.label}
               style={{
-                height: 20,
+                height: 26,
                 borderRadius: 2,
                 cursor: 'default',
-                background: s.ok ? '#22c55e22' : '#ff444418',
+                background: s.ok ? '#22c55e1a' : '#ff44441a',
                 border: s.ok ? '1px solid #22c55e44' : '1px solid #ff444433',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                paddingBottom: 3,
               }}
-            />
+            >
+              <span style={{
+                fontSize: 6,
+                letterSpacing: '0.04em',
+                fontWeight: 600,
+                color: s.ok ? '#22c55e99' : '#ff444466',
+              }}>
+                {SIGNAL_ABBR[i]}
+              </span>
+            </div>
           ))}
         </div>
       </div>
+
+      {/* URL Structure Tree */}
+      {urlTree.length > 0 && (
+        <div>
+          <div className="sidebar-section-label">URL Structure</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            {urlTree.map(([segment, count]) => (
+              <div key={segment} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 9, color: '#555', fontFamily: 'inherit', minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {segment}
+                </span>
+                <span style={{ fontSize: 8, color: '#333', flexShrink: 0 }}>{count}p</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
     </div>
   );

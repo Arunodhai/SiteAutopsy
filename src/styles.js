@@ -71,7 +71,7 @@ body {
 /* Layout */
 .app-layout {
   display: grid;
-  grid-template-columns: 280px 1fr 420px;
+  grid-template-columns: 280px 1fr 350px;
   flex: 1;
   min-height: 0;
   overflow: hidden;

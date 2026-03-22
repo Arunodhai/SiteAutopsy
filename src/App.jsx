@@ -302,7 +302,7 @@ export default function App() {
         {/* ── Left sidebar ── */}
         <div className="col-sidebar">
           {activeTab === 'profile' ? (
-            <SnapshotSidebar rootScrape={rootScrape} />
+            <SnapshotSidebar rootScrape={rootScrape} issues={issues} />
           ) : (
             <>
               <InputPanel

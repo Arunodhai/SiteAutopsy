@@ -56,29 +56,123 @@ function ScoreBar({ score }) {
   const color = score >= 80 ? '#22c55e' : score >= 50 ? '#f5c542' : '#ff4444';
   const pct = Math.max(0, Math.min(100, score));
   return (
-    <div style={{ marginTop: 10, marginBottom: 4 }}>
-      {/* Track */}
-      <div style={{ position: 'relative', height: 5, borderRadius: 2, background: '#111', overflow: 'visible' }}>
-        {/* Gradient fill */}
+    <div style={{ marginTop: 12 }}>
+      {/* Three-zone track — dim segments */}
+      <div style={{ position: 'relative', height: 3, display: 'flex', borderRadius: 1, overflow: 'visible' }}>
+        <div style={{ width: '50%', height: '100%', background: '#ff444418', borderRadius: '1px 0 0 1px' }} />
+        <div style={{ width: '30%', height: '100%', background: '#f5c54218' }} />
+        <div style={{ width: '20%', height: '100%', background: '#22c55e18', borderRadius: '0 1px 1px 0' }} />
+        {/* Solid fill overlay */}
         <div style={{
           position: 'absolute', top: 0, left: 0, height: '100%',
-          width: `${pct}%`, borderRadius: 2,
-          background: `linear-gradient(to right, #ff4444, ${color})`,
-          transition: 'width 0.4s ease',
+          width: `${pct}%`, borderRadius: 1,
+          background: color, opacity: 0.85,
+          transition: 'width 0.5s ease',
         }} />
-        {/* Marker tick */}
+        {/* Marker */}
         <div style={{
-          position: 'absolute', top: -3, left: `${pct}%`,
+          position: 'absolute', top: -4, left: `${pct}%`,
           transform: 'translateX(-50%)',
-          width: 2, height: 11,
-          background: color, borderRadius: 1,
+          width: 1, height: 11,
+          background: color,
         }} />
       </div>
-      {/* Scale labels */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 5 }}>
-        <span style={{ fontSize: 8, color: '#ff444466', letterSpacing: '0.08em' }}>0</span>
-        <span style={{ fontSize: 8, color: '#f5c54266', letterSpacing: '0.08em' }}>50</span>
-        <span style={{ fontSize: 8, color: '#22c55e66', letterSpacing: '0.08em' }}>100</span>
+      {/* Tick labels */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+        <span style={{ fontSize: 7, color: '#ff444444', letterSpacing: '0.06em' }}>0</span>
+        <span style={{ fontSize: 7, color: '#2a2a2a', letterSpacing: '0.06em' }}>50</span>
+        <span style={{ fontSize: 7, color: '#22c55e44', letterSpacing: '0.06em' }}>100</span>
+      </div>
+    </div>
+  );
+}
+
+// Issue heatmap — one square per page, colored by worst severity
+function IssueHeatmap({ pageMap, totalPages }) {
+  const entries = Object.values(pageMap);
+  // Pad to totalPages if we have more crawled than issue-pages
+  return (
+    <div>
+      <div style={{ fontSize: 9, color: '#333', letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 6 }}>
+        Page Health Map
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+        {entries.map((data, i) => {
+          const color = data.crits > 0 ? '#ff4444' : data.warnings > 0 ? '#f5c542' : '#22c55e';
+          const bg    = data.crits > 0 ? '#ff444420' : data.warnings > 0 ? '#f5c54220' : '#22c55e20';
+          const border= data.crits > 0 ? '#ff444444' : data.warnings > 0 ? '#f5c54244' : '#22c55e44';
+          const label = data.crits > 0 ? `${data.crits}C ${data.warnings}W` : `${data.warnings}W`;
+          return (
+            <div key={i} title={`${data.path || '?'} — ${label}`} style={{
+              width: 14, height: 14, borderRadius: 2,
+              background: bg, border: `1px solid ${border}`,
+              cursor: 'default',
+            }} />
+          );
+        })}
+        {/* Clean pages */}
+        {Array.from({ length: Math.max(0, totalPages - entries.length) }).map((_, i) => (
+          <div key={`ok-${i}`} title="Clean page" style={{
+            width: 14, height: 14, borderRadius: 2,
+            background: '#22c55e14', border: '1px solid #22c55e33',
+            cursor: 'default',
+          }} />
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
+        {[['#ff4444', 'Critical'], ['#f5c542', 'Warning'], ['#22c55e', 'Clean']].map(([c, l]) => (
+          <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <div style={{ width: 6, height: 6, borderRadius: 1, background: c + '44', border: `1px solid ${c}66` }} />
+            <span style={{ fontSize: 7, color: '#333', letterSpacing: '0.06em' }}>{l}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Coverage bars — % of pages with title, desc, H1, canonical
+function CoveragePanel({ issues, totalPages }) {
+  if (!totalPages || totalPages === 0) return null;
+  const paths = [...new Set(issues.map(i => i.path).filter(Boolean))];
+
+  const countMissing = (pattern) =>
+    [...new Set(
+      issues.filter(i => i.sev === 'CRITICAL' && pattern.test(i.msg)).map(i => i.path)
+    )].length;
+
+  const missingTitle    = countMissing(/title.*missing|missing.*title/i);
+  const missingDesc     = countMissing(/description.*missing|missing.*desc/i);
+  const missingH1       = countMissing(/h1.*missing|missing.*h1/i);
+  const missingCanon    = [...new Set(
+    issues.filter(i => /canonical/i.test(i.msg)).map(i => i.path)
+  )].length;
+
+  const rows = [
+    { label: 'Title',       pct: Math.round(((totalPages - missingTitle) / totalPages) * 100) },
+    { label: 'Description', pct: Math.round(((totalPages - missingDesc)  / totalPages) * 100) },
+    { label: 'H1 tag',      pct: Math.round(((totalPages - missingH1)    / totalPages) * 100) },
+    { label: 'Canonical',   pct: Math.round(((totalPages - missingCanon) / totalPages) * 100) },
+  ];
+
+  return (
+    <div>
+      <div className="right-label">Coverage</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+        {rows.map(({ label, pct }) => {
+          const color = pct >= 90 ? '#22c55e' : pct >= 60 ? '#f5c542' : '#ff4444';
+          return (
+            <div key={label}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                <span style={{ fontSize: 9, color: '#444', letterSpacing: '0.06em' }}>{label}</span>
+                <span style={{ fontSize: 9, color, fontWeight: 500 }}>{pct}%</span>
+              </div>
+              <div style={{ height: 2, background: '#1a1a1a', borderRadius: 1, overflow: 'hidden' }}>
+                <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 1 }} />
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -378,9 +472,19 @@ export default function ReportPanel({ issues, report, status, domain, stats }) {
         })()}
       </div>
 
-      {/* Top Fixes — collapsible */}
+      {/* Issue heatmap — visible as soon as we have page data */}
+      {(isDone || isRunning) && Object.keys(pageMap).length > 0 && (
+        <IssueHeatmap pageMap={pageMap} totalPages={stats.crawled || Object.keys(pageMap).length} />
+      )}
+
+      {/* Top Fixes */}
       {report && (report.top3Fixes || []).length > 0 && (
         <TopFixes fixes={report.top3Fixes} />
+      )}
+
+      {/* Coverage breakdown */}
+      {isDone && stats.crawled > 0 && (
+        <CoveragePanel issues={issues} totalPages={stats.crawled} />
       )}
 
       {/* Issues by page (accordion) */}
