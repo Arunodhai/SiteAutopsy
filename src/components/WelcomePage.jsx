@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 const FEATURES = [
   {
@@ -15,6 +15,225 @@ const FEATURES = [
   },
 ];
 
+// ── Circuit canvas animation ──────────────────────────────────────────────────
+
+function getPathLength(points) {
+  let len = 0;
+  for (let i = 1; i < points.length; i++) {
+    len += Math.abs(points[i][0] - points[i - 1][0]) + Math.abs(points[i][1] - points[i - 1][1]);
+  }
+  return len;
+}
+
+function getPartialLength(points, upTo) {
+  let len = 0;
+  for (let i = 1; i <= upTo; i++) {
+    len += Math.abs(points[i][0] - points[i - 1][0]) + Math.abs(points[i][1] - points[i - 1][1]);
+  }
+  return len;
+}
+
+function getPosAtLen(points, targetLen) {
+  let drawn = 0;
+  for (let i = 1; i < points.length; i++) {
+    const seg = Math.abs(points[i][0] - points[i - 1][0]) + Math.abs(points[i][1] - points[i - 1][1]);
+    if (drawn + seg >= targetLen) {
+      const frac = seg === 0 ? 0 : (targetLen - drawn) / seg;
+      return {
+        x: points[i - 1][0] + (points[i][0] - points[i - 1][0]) * frac,
+        y: points[i - 1][1] + (points[i][1] - points[i - 1][1]) * frac,
+      };
+    }
+    drawn += seg;
+  }
+  return { x: points[points.length - 1][0], y: points[points.length - 1][1] };
+}
+
+function buildTrace(w, h, rng) {
+  const cx = w / 2 + (rng() - 0.5) * 160;
+  const cy = h / 2 + (rng() - 0.5) * 100;
+
+  const side = Math.floor(rng() * 4); // 0=left 1=right 2=top 3=bottom
+  let sx, sy;
+  if (side === 0)      { sx = 0;  sy = h * (0.1 + rng() * 0.8); }
+  else if (side === 1) { sx = w;  sy = h * (0.1 + rng() * 0.8); }
+  else if (side === 2) { sx = w * (0.1 + rng() * 0.8); sy = 0; }
+  else                 { sx = w * (0.1 + rng() * 0.8); sy = h; }
+
+  const pts = [[sx, sy]];
+
+  // Build 2–3 right-angle segments toward center
+  const horiz = side === 0 || side === 1;
+  if (horiz) {
+    const mid1x = sx + (cx - sx) * (0.35 + rng() * 0.35);
+    pts.push([mid1x, sy]);
+    if (rng() > 0.45) {
+      const mid2y = sy + (cy - sy) * (0.3 + rng() * 0.35);
+      pts.push([mid1x, mid2y]);
+      const mid3x = mid1x + (cx - mid1x) * (0.4 + rng() * 0.45);
+      pts.push([mid3x, mid2y]);
+      pts.push([mid3x, cy]);
+      pts.push([cx, cy]);
+    } else {
+      pts.push([mid1x, cy]);
+      pts.push([cx, cy]);
+    }
+  } else {
+    const mid1y = sy + (cy - sy) * (0.35 + rng() * 0.35);
+    pts.push([sx, mid1y]);
+    if (rng() > 0.45) {
+      const mid2x = sx + (cx - sx) * (0.3 + rng() * 0.35);
+      pts.push([mid2x, mid1y]);
+      const mid3y = mid1y + (cy - mid1y) * (0.4 + rng() * 0.45);
+      pts.push([mid2x, mid3y]);
+      pts.push([cx, mid3y]);
+      pts.push([cx, cy]);
+    } else {
+      pts.push([cx, mid1y]);
+      pts.push([cx, cy]);
+    }
+  }
+
+  const totalLen = getPathLength(pts);
+  const drawDuration = 2000 + rng() * 3000;    // ms to fully draw the trace
+  const delay        = rng() * 4000;            // ms before it starts drawing
+  const pulseSpeed   = 0.18 + rng() * 0.22;    // fraction/sec along the path
+
+  return { pts, totalLen, drawDuration, delay, delay0: delay, pulseSpeed, pulsePos: rng(), opacity: 0.55 + rng() * 0.35 };
+}
+
+// Simple seeded RNG so traces are deterministic on resize
+function makeRng(seed) {
+  let s = seed;
+  return () => { s = (s * 16807 + 0) % 2147483647; return (s - 1) / 2147483646; };
+}
+
+function CircuitCanvas() {
+  const canvasRef = useRef(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    let animId;
+    let traces = [];
+    let lastTs = null;
+
+    const rebuild = () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      canvas.width  = w;
+      canvas.height = h;
+      const rng = makeRng(42);
+      const count = Math.round(w / 90); // ~10–14 traces depending on width
+      traces = Array.from({ length: count }, () => buildTrace(w, h, rng));
+      traces.forEach(t => { t.drawProgress = 0; });
+    };
+
+    rebuild();
+
+    const onResize = () => rebuild();
+    window.addEventListener('resize', onResize);
+
+    const draw = (ts) => {
+      if (!lastTs) lastTs = ts;
+      const dt = Math.min(ts - lastTs, 50); // cap at 50ms (tab blur)
+      lastTs = ts;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      for (const t of traces) {
+        // Countdown delay
+        if (t.delay > 0) { t.delay -= dt; continue; }
+
+        // Advance draw progress (0 → 1)
+        t.drawProgress = Math.min(1, t.drawProgress + dt / t.drawDuration);
+
+        // Advance pulse (loops 0 → 1 → 0 → …)
+        t.pulsePos = (t.pulsePos + t.pulseSpeed * dt / 1000) % 1;
+
+        const targetLen = t.totalLen * t.drawProgress;
+        if (targetLen < 1) continue;
+
+        // ── Draw the trace (dim lines) ──────────────────────────────
+        ctx.beginPath();
+        ctx.moveTo(t.pts[0][0], t.pts[0][1]);
+        let drawn = 0;
+        for (let i = 1; i < t.pts.length; i++) {
+          const seg = Math.abs(t.pts[i][0] - t.pts[i - 1][0]) + Math.abs(t.pts[i][1] - t.pts[i - 1][1]);
+          if (drawn + seg <= targetLen) {
+            ctx.lineTo(t.pts[i][0], t.pts[i][1]);
+            drawn += seg;
+          } else {
+            const frac = seg === 0 ? 0 : (targetLen - drawn) / seg;
+            ctx.lineTo(
+              t.pts[i - 1][0] + (t.pts[i][0] - t.pts[i - 1][0]) * frac,
+              t.pts[i - 1][1] + (t.pts[i][1] - t.pts[i - 1][1]) * frac,
+            );
+            break;
+          }
+        }
+        ctx.strokeStyle = `rgba(38, 38, 38, ${t.opacity})`;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // ── Corner nodes ────────────────────────────────────────────
+        for (let i = 1; i < t.pts.length - 1; i++) {
+          const plen = getPartialLength(t.pts, i);
+          if (plen > targetLen) break;
+          ctx.beginPath();
+          ctx.arc(t.pts[i][0], t.pts[i][1], 2, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(55, 55, 55, ${t.opacity})`;
+          ctx.fill();
+        }
+
+        // ── Orange pulse dot traveling along drawn portion ──────────
+        const pulseLen = t.pulsePos * targetLen;
+        const { x: px, y: py } = getPosAtLen(t.pts, pulseLen);
+
+        // Outer glow
+        const grd = ctx.createRadialGradient(px, py, 0, px, py, 9);
+        grd.addColorStop(0, 'rgba(255, 107, 43, 0.55)');
+        grd.addColorStop(1, 'rgba(255, 107, 43, 0)');
+        ctx.beginPath();
+        ctx.arc(px, py, 9, 0, Math.PI * 2);
+        ctx.fillStyle = grd;
+        ctx.fill();
+
+        // Core dot
+        ctx.beginPath();
+        ctx.arc(px, py, 1.5, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255, 107, 43, 0.9)';
+        ctx.fill();
+      }
+
+      animId = requestAnimationFrame(draw);
+    };
+
+    animId = requestAnimationFrame(draw);
+
+    return () => {
+      cancelAnimationFrame(animId);
+      window.removeEventListener('resize', onResize);
+    };
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        position: 'absolute',
+        inset: 0,
+        width: '100%',
+        height: '100%',
+        pointerEvents: 'none',
+        zIndex: 0,
+      }}
+    />
+  );
+}
+
+// ── Welcome page ──────────────────────────────────────────────────────────────
+
 export default function WelcomePage({ onStart, url, setUrl, history, onSelectHistory }) {
   const [hovered, setHovered] = useState(null);
 
@@ -28,11 +247,14 @@ export default function WelcomePage({ onStart, url, setUrl, history, onSelectHis
       display: 'flex',
       flexDirection: 'column',
       overflow: 'hidden',
+      position: 'relative',
       backgroundColor: '#0a0a0a',
       backgroundImage: 'radial-gradient(circle, #1c1c1c 1px, transparent 1px)',
       backgroundSize: '22px 22px',
       fontFamily: "'JetBrains Mono', 'Fira Code', 'Courier New', monospace",
     }}>
+
+      <CircuitCanvas />
 
       {/* Header */}
       <header style={{
@@ -44,6 +266,8 @@ export default function WelcomePage({ onStart, url, setUrl, history, onSelectHis
         justifyContent: 'space-between',
         padding: '0 28px',
         flexShrink: 0,
+        position: 'relative',
+        zIndex: 1,
       }}>
         <span style={{ fontSize: 13, fontWeight: 600, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#ff6b2b' }}>
           Site Autopsy
@@ -62,6 +286,8 @@ export default function WelcomePage({ onStart, url, setUrl, history, onSelectHis
         justifyContent: 'center',
         padding: '0 24px',
         gap: 0,
+        position: 'relative',
+        zIndex: 1,
       }}>
 
         {/* Eyebrow */}
@@ -159,6 +385,8 @@ export default function WelcomePage({ onStart, url, setUrl, history, onSelectHis
         gridTemplateColumns: 'repeat(3, 1fr)',
         borderTop: '1px solid #1a1a1a',
         flexShrink: 0,
+        position: 'relative',
+        zIndex: 1,
       }}>
         {FEATURES.map((f, i) => (
           <div key={i} style={{
