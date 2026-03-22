@@ -17,95 +17,112 @@ const FEATURES = [
 
 // ── Circuit canvas animation ──────────────────────────────────────────────────
 
-function getPathLength(points) {
-  let len = 0;
-  for (let i = 1; i < points.length; i++) {
-    len += Math.abs(points[i][0] - points[i - 1][0]) + Math.abs(points[i][1] - points[i - 1][1]);
-  }
-  return len;
-}
-
-function getPartialLength(points, upTo) {
-  let len = 0;
-  for (let i = 1; i <= upTo; i++) {
-    len += Math.abs(points[i][0] - points[i - 1][0]) + Math.abs(points[i][1] - points[i - 1][1]);
-  }
-  return len;
-}
-
-function getPosAtLen(points, targetLen) {
-  let drawn = 0;
-  for (let i = 1; i < points.length; i++) {
-    const seg = Math.abs(points[i][0] - points[i - 1][0]) + Math.abs(points[i][1] - points[i - 1][1]);
-    if (drawn + seg >= targetLen) {
-      const frac = seg === 0 ? 0 : (targetLen - drawn) / seg;
-      return {
-        x: points[i - 1][0] + (points[i][0] - points[i - 1][0]) * frac,
-        y: points[i - 1][1] + (points[i][1] - points[i - 1][1]) * frac,
-      };
-    }
-    drawn += seg;
-  }
-  return { x: points[points.length - 1][0], y: points[points.length - 1][1] };
-}
-
-function buildTrace(w, h, rng) {
-  const cx = w / 2 + (rng() - 0.5) * 160;
-  const cy = h / 2 + (rng() - 0.5) * 100;
-
-  const side = Math.floor(rng() * 4); // 0=left 1=right 2=top 3=bottom
-  let sx, sy;
-  if (side === 0)      { sx = 0;  sy = h * (0.1 + rng() * 0.8); }
-  else if (side === 1) { sx = w;  sy = h * (0.1 + rng() * 0.8); }
-  else if (side === 2) { sx = w * (0.1 + rng() * 0.8); sy = 0; }
-  else                 { sx = w * (0.1 + rng() * 0.8); sy = h; }
-
-  const pts = [[sx, sy]];
-
-  // Build 2–3 right-angle segments toward center
-  const horiz = side === 0 || side === 1;
-  if (horiz) {
-    const mid1x = sx + (cx - sx) * (0.35 + rng() * 0.35);
-    pts.push([mid1x, sy]);
-    if (rng() > 0.45) {
-      const mid2y = sy + (cy - sy) * (0.3 + rng() * 0.35);
-      pts.push([mid1x, mid2y]);
-      const mid3x = mid1x + (cx - mid1x) * (0.4 + rng() * 0.45);
-      pts.push([mid3x, mid2y]);
-      pts.push([mid3x, cy]);
-      pts.push([cx, cy]);
-    } else {
-      pts.push([mid1x, cy]);
-      pts.push([cx, cy]);
-    }
-  } else {
-    const mid1y = sy + (cy - sy) * (0.35 + rng() * 0.35);
-    pts.push([sx, mid1y]);
-    if (rng() > 0.45) {
-      const mid2x = sx + (cx - sx) * (0.3 + rng() * 0.35);
-      pts.push([mid2x, mid1y]);
-      const mid3y = mid1y + (cy - mid1y) * (0.4 + rng() * 0.45);
-      pts.push([mid2x, mid3y]);
-      pts.push([cx, mid3y]);
-      pts.push([cx, cy]);
-    } else {
-      pts.push([cx, mid1y]);
-      pts.push([cx, cy]);
-    }
-  }
-
-  const totalLen = getPathLength(pts);
-  const drawDuration = 2000 + rng() * 3000;    // ms to fully draw the trace
-  const delay        = rng() * 4000;            // ms before it starts drawing
-  const pulseSpeed   = 0.18 + rng() * 0.22;    // fraction/sec along the path
-
-  return { pts, totalLen, drawDuration, delay, delay0: delay, pulseSpeed, pulsePos: rng(), opacity: 0.55 + rng() * 0.35 };
-}
-
-// Simple seeded RNG so traces are deterministic on resize
 function makeRng(seed) {
   let s = seed;
   return () => { s = (s * 16807 + 0) % 2147483647; return (s - 1) / 2147483646; };
+}
+
+function pathLength(pts) {
+  let len = 0;
+  for (let i = 1; i < pts.length; i++)
+    len += Math.abs(pts[i][0] - pts[i-1][0]) + Math.abs(pts[i][1] - pts[i-1][1]);
+  return len;
+}
+
+function posAtLen(pts, target) {
+  let acc = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const seg = Math.abs(pts[i][0]-pts[i-1][0]) + Math.abs(pts[i][1]-pts[i-1][1]);
+    if (acc + seg >= target) {
+      const f = seg === 0 ? 0 : (target - acc) / seg;
+      return { x: pts[i-1][0] + (pts[i][0]-pts[i-1][0])*f, y: pts[i-1][1] + (pts[i][1]-pts[i-1][1])*f };
+    }
+    acc += seg;
+  }
+  return { x: pts.at(-1)[0], y: pts.at(-1)[1] };
+}
+
+// Build exactly 4 traces per side (16 total), evenly spaced
+function buildTraces(w, h) {
+  const rng = makeRng(7);
+  const traces = [];
+
+  // Inner landing zone — where traces terminate (around the hero)
+  const zoneX = [w * 0.28, w * 0.72];
+  const zoneY = [h * 0.25, h * 0.72];
+
+  const PER_SIDE = 4;
+
+  for (let side = 0; side < 4; side++) {
+    for (let k = 0; k < PER_SIDE; k++) {
+      const t = (k + 0.5) / PER_SIDE; // evenly spaced 0..1 along the edge
+      const jitter = (rng() - 0.5) * 0.08;
+      const tj = Math.max(0.05, Math.min(0.95, t + jitter));
+
+      let sx, sy;
+      if (side === 0) { sx = 0;  sy = h * tj; }           // left
+      else if (side === 1) { sx = w;  sy = h * tj; }      // right
+      else if (side === 2) { sx = w * tj; sy = 0; }       // top
+      else                 { sx = w * tj; sy = h; }       // bottom
+
+      // Terminal point inside the zone
+      const ex = zoneX[0] + rng() * (zoneX[1] - zoneX[0]);
+      const ey = zoneY[0] + rng() * (zoneY[1] - zoneY[0]);
+
+      // Build an L or Z path (always orthogonal segments)
+      const pts = [[sx, sy]];
+      const horiz = side === 0 || side === 1;
+
+      if (horiz) {
+        // Horizontal first, then vertical
+        const bend1x = sx + (ex - sx) * (0.4 + rng() * 0.3);
+        pts.push([bend1x, sy]);
+        if (rng() > 0.5) {
+          // Z-shape: add extra jog
+          const bend2y = sy + (ey - sy) * (0.35 + rng() * 0.3);
+          pts.push([bend1x, bend2y]);
+          const bend3x = bend1x + (ex - bend1x) * (0.4 + rng() * 0.4);
+          pts.push([bend3x, bend2y]);
+          pts.push([bend3x, ey]);
+        } else {
+          pts.push([bend1x, ey]);
+        }
+        pts.push([ex, ey]);
+      } else {
+        // Vertical first, then horizontal
+        const bend1y = sy + (ey - sy) * (0.4 + rng() * 0.3);
+        pts.push([sx, bend1y]);
+        if (rng() > 0.5) {
+          const bend2x = sx + (ex - sx) * (0.35 + rng() * 0.3);
+          pts.push([bend2x, bend1y]);
+          const bend3y = bend1y + (ey - bend1y) * (0.4 + rng() * 0.4);
+          pts.push([bend2x, bend3y]);
+          pts.push([ex, bend3y]);
+        } else {
+          pts.push([ex, bend1y]);
+        }
+        pts.push([ex, ey]);
+      }
+
+      const totalLen    = pathLength(pts);
+      const drawMs      = 1800 + rng() * 2200;
+      const startDelay  = 300 + rng() * 2500;
+      const pulseSpeed  = 0.12 + rng() * 0.16; // fraction/sec
+
+      traces.push({
+        pts,
+        totalLen,
+        drawMs,
+        delay: startDelay,
+        drawProgress: 0,
+        pulsePos: rng(),
+        pulseSpeed,
+        alpha: 0.5 + rng() * 0.3,
+      });
+    }
+  }
+
+  return traces;
 }
 
 function CircuitCanvas() {
@@ -113,96 +130,89 @@ function CircuitCanvas() {
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
+    const ctx    = canvas.getContext('2d');
     let animId;
     let traces = [];
     let lastTs = null;
 
     const rebuild = () => {
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      canvas.width  = w;
-      canvas.height = h;
-      const rng = makeRng(42);
-      const count = Math.round(w / 90); // ~10–14 traces depending on width
-      traces = Array.from({ length: count }, () => buildTrace(w, h, rng));
-      traces.forEach(t => { t.drawProgress = 0; });
+      canvas.width  = window.innerWidth;
+      canvas.height = window.innerHeight;
+      traces = buildTraces(canvas.width, canvas.height);
     };
-
     rebuild();
-
-    const onResize = () => rebuild();
-    window.addEventListener('resize', onResize);
+    window.addEventListener('resize', rebuild);
 
     const draw = (ts) => {
       if (!lastTs) lastTs = ts;
-      const dt = Math.min(ts - lastTs, 50); // cap at 50ms (tab blur)
+      const dt = Math.min(ts - lastTs, 50);
       lastTs = ts;
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       for (const t of traces) {
-        // Countdown delay
+        // Delay countdown
         if (t.delay > 0) { t.delay -= dt; continue; }
 
-        // Advance draw progress (0 → 1)
-        t.drawProgress = Math.min(1, t.drawProgress + dt / t.drawDuration);
+        // Grow draw progress
+        t.drawProgress = Math.min(1, t.drawProgress + dt / t.drawMs);
+        const drawnLen = t.totalLen * t.drawProgress;
+        if (drawnLen < 1) continue;
 
-        // Advance pulse (loops 0 → 1 → 0 → …)
+        // Advance pulse position along the drawn portion only
         t.pulsePos = (t.pulsePos + t.pulseSpeed * dt / 1000) % 1;
 
-        const targetLen = t.totalLen * t.drawProgress;
-        if (targetLen < 1) continue;
-
-        // ── Draw the trace (dim lines) ──────────────────────────────
+        // ── Trace line ──────────────────────────────────────────────
         ctx.beginPath();
         ctx.moveTo(t.pts[0][0], t.pts[0][1]);
-        let drawn = 0;
-        for (let i = 1; i < t.pts.length; i++) {
-          const seg = Math.abs(t.pts[i][0] - t.pts[i - 1][0]) + Math.abs(t.pts[i][1] - t.pts[i - 1][1]);
-          if (drawn + seg <= targetLen) {
+        let acc = 0;
+        let done = false;
+        for (let i = 1; i < t.pts.length && !done; i++) {
+          const seg = Math.abs(t.pts[i][0]-t.pts[i-1][0]) + Math.abs(t.pts[i][1]-t.pts[i-1][1]);
+          if (acc + seg <= drawnLen) {
             ctx.lineTo(t.pts[i][0], t.pts[i][1]);
-            drawn += seg;
+            acc += seg;
           } else {
-            const frac = seg === 0 ? 0 : (targetLen - drawn) / seg;
+            const f = seg === 0 ? 0 : (drawnLen - acc) / seg;
             ctx.lineTo(
-              t.pts[i - 1][0] + (t.pts[i][0] - t.pts[i - 1][0]) * frac,
-              t.pts[i - 1][1] + (t.pts[i][1] - t.pts[i - 1][1]) * frac,
+              t.pts[i-1][0] + (t.pts[i][0]-t.pts[i-1][0]) * f,
+              t.pts[i-1][1] + (t.pts[i][1]-t.pts[i-1][1]) * f,
             );
-            break;
+            done = true;
           }
         }
-        ctx.strokeStyle = `rgba(38, 38, 38, ${t.opacity})`;
-        ctx.lineWidth = 1;
+        ctx.strokeStyle = `rgba(32, 32, 32, ${t.alpha})`;
+        ctx.lineWidth   = 1;
         ctx.stroke();
 
-        // ── Corner nodes ────────────────────────────────────────────
+        // ── Corner nodes (2.5px circle at each bend that's been drawn) ──
+        let segAcc = 0;
         for (let i = 1; i < t.pts.length - 1; i++) {
-          const plen = getPartialLength(t.pts, i);
-          if (plen > targetLen) break;
+          segAcc += Math.abs(t.pts[i][0]-t.pts[i-1][0]) + Math.abs(t.pts[i][1]-t.pts[i-1][1]);
+          if (segAcc > drawnLen) break;
           ctx.beginPath();
-          ctx.arc(t.pts[i][0], t.pts[i][1], 2, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(55, 55, 55, ${t.opacity})`;
+          ctx.arc(t.pts[i][0], t.pts[i][1], 2.5, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(50, 50, 50, ${t.alpha * 1.2})`;
           ctx.fill();
         }
 
-        // ── Orange pulse dot traveling along drawn portion ──────────
-        const pulseLen = t.pulsePos * targetLen;
-        const { x: px, y: py } = getPosAtLen(t.pts, pulseLen);
+        // ── Pulse dot traveling along the drawn path ─────────────────
+        const pulseLen = t.pulsePos * drawnLen;
+        const { x: px, y: py } = posAtLen(t.pts, pulseLen);
 
-        // Outer glow
-        const grd = ctx.createRadialGradient(px, py, 0, px, py, 9);
-        grd.addColorStop(0, 'rgba(255, 107, 43, 0.55)');
+        // Soft glow
+        const grd = ctx.createRadialGradient(px, py, 0, px, py, 7);
+        grd.addColorStop(0, 'rgba(255, 107, 43, 0.45)');
         grd.addColorStop(1, 'rgba(255, 107, 43, 0)');
         ctx.beginPath();
-        ctx.arc(px, py, 9, 0, Math.PI * 2);
+        ctx.arc(px, py, 7, 0, Math.PI * 2);
         ctx.fillStyle = grd;
         ctx.fill();
 
-        // Core dot
+        // Core
         ctx.beginPath();
         ctx.arc(px, py, 1.5, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(255, 107, 43, 0.9)';
+        ctx.fillStyle = 'rgba(255, 130, 60, 0.92)';
         ctx.fill();
       }
 
@@ -210,24 +220,13 @@ function CircuitCanvas() {
     };
 
     animId = requestAnimationFrame(draw);
-
-    return () => {
-      cancelAnimationFrame(animId);
-      window.removeEventListener('resize', onResize);
-    };
+    return () => { cancelAnimationFrame(animId); window.removeEventListener('resize', rebuild); };
   }, []);
 
   return (
     <canvas
       ref={canvasRef}
-      style={{
-        position: 'absolute',
-        inset: 0,
-        width: '100%',
-        height: '100%',
-        pointerEvents: 'none',
-        zIndex: 0,
-      }}
+      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 0 }}
     />
   );
 }
