@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { mapUrl, scrapeUrl, scrapeBranding, scrapeSnapshot } from './lib/firecrawl.js';
 import styles from './styles.js';
+import WelcomePage from './components/WelcomePage.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import SnapshotSidebar from './components/SnapshotSidebar.jsx';
 import Terminal from './components/Terminal.jsx';
@@ -33,6 +34,8 @@ export default function App() {
   const [rootScrape, setRootScrape]     = useState(null);
   const [activeTab, setActiveTab]       = useState('feed');
   const [seoScore, setSeoScore]         = useState(null);
+  const [mapLinks, setMapLinks]         = useState([]);
+  const [showWelcome, setShowWelcome]   = useState(true);
 
   const startTimeRef  = useRef(null);
   const abortRef      = useRef(null);
@@ -98,11 +101,12 @@ export default function App() {
     setSiteSummary(null);
     setRootScrape(null);
     setSeoScore(null);
+    setMapLinks([]);
     rootScrapeRef.current = null;
     setStats({ crawled: 0, total: 0, crits: 0, warnings: 0 });
     startTimeRef.current = Date.now();
 
-    const activeKey = llmProvider === 'nvidia' ? nvidiaKey : groqKey;
+    const activeKey = (llmProvider === 'nvidia' ? nvidiaKey : groqKey).trim();
     const providerLabel = llmProvider === 'nvidia' ? 'NVIDIA (Kimi K2.5)' : 'Groq (Llama 3.3)';
 
     if (!fcKey) {
@@ -140,7 +144,9 @@ export default function App() {
     let initialUrls;
     try {
       const mapRes = await mapUrl(url, fcKey);
-      initialUrls = (mapRes.links || [url]).filter(isHtmlUrl).slice(0, PAGE_LIMIT);
+      const allLinks = mapRes.links || [url];
+      setMapLinks(allLinks);                                   // full list for sidebar display
+      initialUrls = allLinks.filter(isHtmlUrl).slice(0, PAGE_LIMIT);
     } catch {
       pushLog('WARNING', 'mapUrl failed — falling back to root URL only');
       initialUrls = [url];
@@ -269,20 +275,43 @@ export default function App() {
     let summary = null;
     if (!controller.signal.aborted && activeKey) {
       pushLog('SYSTEM', `Generating AI summary via ${providerLabel}...`);
+      let summaryErr = null;
       try {
         summary = llmProvider === 'groq'
           ? await groqSummary(allIssues, currentDomain, activeKey, controller.signal)
           : await kimiSummary(allIssues, currentDomain, activeKey, controller.signal);
+      } catch (err) {
+        if (err.name === 'AbortError') {
+          setStatus('done');
+          return;
+        }
+        summaryErr = err;
+        console.error('[AI summary] primary provider failed:', err);
+        // Fallback: if NVIDIA failed and Groq key is available, try Groq
+        if (llmProvider === 'nvidia' && groqKey.trim()) {
+          pushLog('WARNING', `NVIDIA failed (${err.message}) — retrying with Groq...`);
+          try {
+            summary = await groqSummary(allIssues, currentDomain, groqKey.trim(), controller.signal);
+            summaryErr = null;
+          } catch (groqErr) {
+            if (groqErr.name === 'AbortError') { setStatus('done'); return; }
+            console.error('[AI summary] Groq fallback also failed:', groqErr);
+          }
+        }
+      }
+
+      if (summary) {
         setReport(summary);
         if (summary.siteSummary && !siteSummary) setSiteSummary(summary.siteSummary);
         setStats(s => ({ ...s, crawled: s.crawled + 1 }));
         pushLog('SYSTEM', `Autopsy complete — health score: ${calculatedScore.score}/100`);
-      } catch (err) {
-        if (err.name !== 'AbortError') {
-          pushLog('WARNING', `AI summary failed — ${err.message || err}`);
-          setStats(s => ({ ...s, crawled: s.crawled + 1 }));
-        }
+      } else if (summaryErr) {
+        pushLog('WARNING', `AI summary failed — ${summaryErr.message || summaryErr} (check browser console for details)`);
+        setStats(s => ({ ...s, crawled: s.crawled + 1 }));
+        pushLog('SYSTEM', `Autopsy complete — health score: ${calculatedScore.score}/100`);
       }
+    } else if (!activeKey) {
+      pushLog('SYSTEM', `Autopsy complete — health score: ${calculatedScore.score}/100`);
     }
 
     if (!controller.signal.aborted) {
@@ -305,6 +334,31 @@ export default function App() {
     setStatus('done');
   }
 
+  function handleWelcomeStart() {
+    if (!url.trim()) return;
+    setShowWelcome(false);
+    runAutopsy();
+  }
+
+  if (showWelcome) {
+    return (
+      <>
+        <style>{styles}</style>
+        <WelcomePage
+          url={url}
+          setUrl={(v) => { setUrl(v); persist('sa_url', v); }}
+          onStart={handleWelcomeStart}
+          history={history}
+          onSelectHistory={(domain) => {
+            const full = domain.startsWith('http') ? domain : `https://${domain}`;
+            setUrl(full);
+            persist('sa_url', full);
+          }}
+        />
+      </>
+    );
+  }
+
   return (
     <div className="app">
       <style>{styles}</style>
@@ -318,11 +372,12 @@ export default function App() {
         {/* ── Left sidebar ── */}
         <div className="col-sidebar">
           {activeTab === 'profile' ? (
-            <SnapshotSidebar rootScrape={rootScrape} issues={issues} stats={stats} />
+            <SnapshotSidebar rootScrape={rootScrape} issues={issues} stats={stats} mapLinks={mapLinks} domain={domain} />
           ) : (
             <Sidebar
               stats={stats} status={status} elapsed={elapsed}
               report={report} seoScore={seoScore}
+              mapLinks={mapLinks} domain={domain}
             />
           )}
         </div>

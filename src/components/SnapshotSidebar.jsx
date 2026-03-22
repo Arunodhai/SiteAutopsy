@@ -1,63 +1,110 @@
 import { detectTechStack, categoryStyle } from '../lib/techStack.js';
 
-// Build URL structure tree from issue paths
-function buildUrlTree(issues) {
+// Identical to Sidebar.jsx buildUrlTree — same tree logic, same data source
+function buildUrlTree(links, domain) {
   const paths = [...new Set(
-    ['/', ...issues.map(i => i.path).filter(Boolean)]
-  )];
+    links.map(url => {
+      try {
+        const u = new URL(url);
+        if (domain && u.hostname !== domain) return null;
+        const p = u.pathname.replace(/\/$/, '') || '/';
+        return p;
+      } catch { return null; }
+    }).filter(Boolean)
+  )].sort();
 
-  const segments = {};
-  paths.forEach(p => {
-    const parts = p.split('/').filter(Boolean);
-    const key = parts.length === 0 ? '/' : '/' + parts[0] + (parts.length > 1 ? '/' : '');
-    segments[key] = (segments[key] || 0) + 1;
+  if (paths.length === 0) return [];
+
+  const items = [];
+  const roots = {};
+  for (const path of paths) {
+    if (path === '/') {
+      roots['/'] = roots['/'] || { path: '/', children: [] };
+    } else {
+      const parts = path.split('/').filter(Boolean);
+      const first = `/${parts[0]}`;
+      if (!roots[first]) roots[first] = { path: first, children: [] };
+      if (path !== first) roots[first].children.push(path);
+    }
+  }
+
+  const rootEntries = Object.values(roots);
+  rootEntries.forEach((node, ri) => {
+    const isLastRoot = ri === rootEntries.length - 1;
+    items.push({
+      key: node.path,
+      path: node.path,
+      depth: node.path === '/' ? 0 : 1,
+      connector: node.path === '/' ? '' : (isLastRoot ? '└─' : '├─'),
+      indent: 0,
+    });
+    node.children.forEach((child, ci) => {
+      const isLastChild = ci === node.children.length - 1;
+      const tail = child.split('/').filter(Boolean).slice(1).join('/');
+      const display = tail ? `…/${tail}` : child;
+      items.push({
+        key: child,
+        path: display,
+        depth: 2,
+        connector: isLastChild ? '└─' : '├─',
+        indent: 12,
+      });
+    });
   });
 
-  return Object.entries(segments)
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .slice(0, 8);
+  return items;
 }
 
-function PageHealthMap({ issues, totalPages }) {
-  const nonOk = issues.filter(i => i.sev !== 'OK');
-  const pageMap = {};
-  nonOk.forEach(issue => {
-    const key = issue.path || '/';
-    if (!pageMap[key]) pageMap[key] = { crits: 0, warnings: 0, path: key };
-    if (issue.sev === 'CRITICAL') pageMap[key].crits++;
-    if (issue.sev === 'WARNING') pageMap[key].warnings++;
-  });
-  const entries = Object.values(pageMap);
-  const cleanCount = Math.max(0, totalPages - entries.length);
+function CheckHealthGrid({ issues, totalPages }) {
+  if (!totalPages || totalPages === 0) return null;
+
+  const countBySev = (pattern, sev) =>
+    [...new Set(issues.filter(i => i.sev === sev && pattern.test(i.msg)).map(i => i.path))].length;
+
+  const checks = [
+    { abbr: 'TTL', label: 'Title tag',        crits: countBySev(/missing.*title|title.*missing/i, 'CRITICAL'), warns: countBySev(/title.*length/i, 'WARNING') },
+    { abbr: 'DSC', label: 'Meta description', crits: countBySev(/missing.*desc|desc.*missing/i, 'CRITICAL'),  warns: countBySev(/desc.*length/i, 'WARNING') },
+    { abbr: 'H1',  label: 'H1 tag',           crits: countBySev(/missing.*h1|h1.*missing/i, 'CRITICAL'),      warns: countBySev(/multiple.*h1/i, 'WARNING') },
+    { abbr: 'ALT', label: 'Image alt text',   crits: 0,                                                        warns: countBySev(/missing.*alt|alt.*missing/i, 'WARNING') },
+    { abbr: 'CAN', label: 'Canonical tag',    crits: 0,                                                        warns: countBySev(/canonical/i, 'WARNING') },
+    { abbr: 'OG',  label: 'OG tags',          crits: 0,                                                        warns: countBySev(/og.*tag|open.*graph/i, 'WARNING') },
+    { abbr: 'DUP', label: 'Duplicate titles', crits: 0,                                                        warns: countBySev(/duplicate.*title/i, 'WARNING') },
+    { abbr: 'IDX', label: 'Robots noindex',   crits: countBySev(/noindex/i, 'CRITICAL'),                       warns: 0 },
+    { abbr: 'LNK', label: 'Broken links',     crits: countBySev(/broken.*link|link.*broken/i, 'CRITICAL'),     warns: 0 },
+    { abbr: 'PRF', label: 'Performance',      crits: 0,                                                        warns: countBySev(/thin.*content/i, 'WARNING') },
+  ];
 
   return (
     <div>
-      <div className="sidebar-section-label">Page Health Map</div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
-        {entries.map((data, i) => {
-          const bg     = data.crits > 0 ? '#ff444420' : '#f5c54220';
-          const border = data.crits > 0 ? '#ff444444' : '#f5c54244';
-          const label  = data.crits > 0 ? `${data.crits}C ${data.warnings}W` : `${data.warnings}W`;
+      <div className="sidebar-section-label">Check Health</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+        {checks.map(({ abbr, label, crits, warns }) => {
+          const hasCrit = crits > 0;
+          const hasWarn = warns > 0;
+          const bg     = hasCrit ? '#ff444422' : hasWarn ? '#f5c54218' : '#22c55e14';
+          const border = hasCrit ? '#ff444455' : hasWarn ? '#f5c54244' : '#22c55e33';
+          const color  = hasCrit ? '#ff4444'   : hasWarn ? '#f5c542'   : '#22c55e66';
+          const tip    = `${label}: ${hasCrit ? `${crits} pages critical` : hasWarn ? `${warns} pages warned` : 'all passing'}`;
           return (
-            <div key={i} title={`${data.path} — ${label}`} style={{
-              width: 13, height: 13, borderRadius: 2,
+            <div key={abbr} title={tip} style={{
+              width: 34, height: 28, borderRadius: 2,
               background: bg, border: `1px solid ${border}`,
-              cursor: 'default',
-            }} />
+              display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center',
+              gap: 2, cursor: 'default',
+            }}>
+              <span style={{ fontSize: 7, fontWeight: 600, color, letterSpacing: '0.04em' }}>{abbr}</span>
+              <span style={{ fontSize: 7, color: hasCrit ? '#ff444499' : hasWarn ? '#f5c54299' : '#22c55e44' }}>
+                {hasCrit ? crits : hasWarn ? warns : '✓'}
+              </span>
+            </div>
           );
         })}
-        {Array.from({ length: cleanCount }).map((_, i) => (
-          <div key={`ok-${i}`} title="Clean page" style={{
-            width: 13, height: 13, borderRadius: 2,
-            background: '#22c55e14', border: '1px solid #22c55e33',
-            cursor: 'default',
-          }} />
-        ))}
       </div>
-      <div style={{ display: 'flex', gap: 10, marginTop: 5 }}>
-        {[['#ff4444', 'Critical'], ['#f5c542', 'Warning'], ['#22c55e', 'Clean']].map(([c, l]) => (
+      <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
+        {[['#ff4444', 'Critical'], ['#f5c542', 'Warning'], ['#22c55e', 'Pass']].map(([c, l]) => (
           <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <div style={{ width: 5, height: 5, borderRadius: 1, background: c + '44', border: `1px solid ${c}66` }} />
+            <div style={{ width: 5, height: 5, borderRadius: 1, background: c + '33', border: `1px solid ${c}55` }} />
             <span style={{ fontSize: 7, color: '#333', letterSpacing: '0.06em' }}>{l}</span>
           </div>
         ))}
@@ -111,7 +158,7 @@ function Coverage({ issues, totalPages }) {
   );
 }
 
-export default function SnapshotSidebar({ rootScrape, issues = [], stats }) {
+export default function SnapshotSidebar({ rootScrape, issues = [], stats, mapLinks = [], domain = '' }) {
   if (!rootScrape) {
     return (
       <div className="sidebar-inner">
@@ -145,7 +192,7 @@ export default function SnapshotSidebar({ rootScrape, issues = [], stats }) {
   const scoreColor = passCount >= 8 ? '#22c55e' : passCount >= 5 ? '#f5c542' : '#ff4444';
 
   const title   = meta.title || meta.ogTitle || '';
-  const urlTree = buildUrlTree(issues);
+  const urlTree = buildUrlTree(mapLinks, domain);
   const isDone  = stats?.crawled > 0;
 
   return (
@@ -234,9 +281,9 @@ export default function SnapshotSidebar({ rootScrape, issues = [], stats }) {
         </div>
       </div>
 
-      {/* Page Health Map */}
+      {/* Check Health Grid */}
       {isDone && (
-        <PageHealthMap issues={issues} totalPages={stats.crawled} />
+        <CheckHealthGrid issues={issues} totalPages={stats.crawled} />
       )}
 
       {/* Coverage */}
@@ -244,17 +291,27 @@ export default function SnapshotSidebar({ rootScrape, issues = [], stats }) {
         <Coverage issues={issues} totalPages={stats.crawled} />
       )}
 
-      {/* URL Structure Tree */}
+      {/* URL Structure — identical to Live Feed sidebar */}
       {urlTree.length > 0 && (
         <div>
-          <div className="sidebar-section-label">URL Structure</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            {urlTree.map(([segment, count]) => (
-              <div key={segment} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 9, color: '#555', minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {segment}
+          <div className="sidebar-section-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>URL Structure</span>
+            <span style={{ fontSize: 9, color: '#333', fontWeight: 400 }}>{mapLinks.length} found</span>
+          </div>
+          <div className="url-tree">
+            {urlTree.map(item => (
+              <div
+                key={item.key}
+                className="url-tree-row"
+                style={{ paddingLeft: item.indent }}
+                title={item.key}
+              >
+                {item.connector && (
+                  <span className="url-tree-connector">{item.connector}</span>
+                )}
+                <span className={`url-tree-path ${item.depth === 0 ? 'root' : item.depth === 1 ? 'depth1' : 'depth2'}`}>
+                  {item.path}
                 </span>
-                <span style={{ fontSize: 8, color: '#333', flexShrink: 0 }}>{count}p</span>
               </div>
             ))}
           </div>

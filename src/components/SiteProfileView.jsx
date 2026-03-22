@@ -48,10 +48,9 @@ export default function SiteProfileView({ branding, screenshot, siteSummary, roo
   const pageUrl = rootScrape?.url || '';
 
   return (
-    // Outer: full flex column, no scroll — screenshot will grow to fill
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
-      {/* ── Browser chrome (fixed) ── */}
+      {/* ── Browser chrome (pinned) ── */}
       <div className="snapshot-browser-chrome" style={{ flexShrink: 0 }}>
         <div className="snapshot-traffic-lights">
           <span className="snapshot-tl snapshot-tl-red" />
@@ -64,8 +63,8 @@ export default function SiteProfileView({ branding, screenshot, siteSummary, roo
         </div>
       </div>
 
-      {/* ── Screenshot — grows to fill remaining space, scrollable ── */}
-      <div style={{ flex: 1, minHeight: 180, overflowY: 'auto', background: '#080808', position: 'relative' }}
+      {/* ── Screenshot — scrollable browser window, fills remaining height ── */}
+      <div style={{ flex: 1, overflowY: 'auto', background: '#080808', minHeight: 0 }}
         className="profile-view-scroll">
         {screenshot ? (
           <img
@@ -82,7 +81,31 @@ export default function SiteProfileView({ branding, screenshot, siteSummary, roo
         )}
       </div>
 
-      {/* ── Brand strip (fixed row) ── */}
+      {/* ── Site summary — fixed below browser ── */}
+      {siteSummary && (
+        <div style={{
+          flexShrink: 0,
+          padding: '10px 16px',
+          borderTop: '1px solid #181818',
+          borderBottom: '1px solid #181818',
+          background: '#0a0a0a',
+        }}>
+          <div style={{
+            fontSize: 9, color: '#ff6b2b', letterSpacing: '0.14em',
+            textTransform: 'uppercase', marginBottom: 6, fontWeight: 500,
+          }}>
+            Site Summary
+          </div>
+          <p style={{
+            fontSize: 11, color: '#777', lineHeight: 1.75, margin: 0, fontWeight: 300,
+            borderLeft: '2px solid #ff6b2b33', paddingLeft: 10,
+          }}>
+            {siteSummary}
+          </p>
+        </div>
+      )}
+
+      {/* ── Brand strip — fixed below summary ── */}
       {branding && (
         <div style={{
           flexShrink: 0,
@@ -104,12 +127,12 @@ export default function SiteProfileView({ branding, screenshot, siteSummary, roo
                 onError={e => { e.target.style.display = 'none'; }} />
             ) : favicon ? (
               <img src={favicon} alt="favicon"
-                style={{ width: 18, height: 18, objectFit: 'contain', opacity: 0.7 }} />
+                style={{ width: 18, height: 18, objectFit: 'contain', opacity: 0.9 }} />
             ) : null}
             <div>
-              <div style={{ fontSize: 10, color: '#777', letterSpacing: '0.04em' }}>{domain}</div>
+              <div style={{ fontSize: 10, color: '#bbb', letterSpacing: '0.04em' }}>{domain}</div>
               {colorScheme && (
-                <div style={{ fontSize: 7, color: '#2a2a2a', letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 1 }}>
+                <div style={{ fontSize: 7, color: '#666', letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 1 }}>
                   {colorScheme}
                 </div>
               )}
@@ -125,7 +148,7 @@ export default function SiteProfileView({ branding, screenshot, siteSummary, roo
               {colorEntries.slice(0, 6).map(([label, hex]) => (
                 <div key={label} title={`${label}: ${hex}`} style={{
                   width: 20, height: 20, borderRadius: 2,
-                  background: hex, border: '1px solid #ffffff0f',
+                  background: hex, border: '1px solid #333',
                   cursor: 'default', flexShrink: 0,
                 }} />
               ))}
@@ -160,107 +183,90 @@ export default function SiteProfileView({ branding, screenshot, siteSummary, roo
           {hasButtons && (
             <>
               <div style={{ width: 1, height: 28, background: '#1e1e1e', flexShrink: 0 }} />
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
-                {btn.background && (
-                  <div style={{
-                    padding: '3px 10px', borderRadius: spacing.borderRadius || '4px',
-                    background: btn.background, color: btn.textColor || '#fff',
-                    fontSize: 9, fontWeight: 600, border: '1px solid transparent',
-                    fontFamily: fontFamilies.primary ? `'${fontFamilies.primary}', sans-serif` : undefined,
-                    flexShrink: 0,
-                  }}>Primary</div>
-                )}
-                {btnSec.borderColor && (
-                  <div style={{
-                    padding: '3px 10px', borderRadius: spacing.borderRadius || '4px',
-                    background: 'transparent', color: btnSec.textColor || btnSec.borderColor,
-                    fontSize: 9, fontWeight: 600, border: `1px solid ${btnSec.borderColor}`,
-                    fontFamily: fontFamilies.primary ? `'${fontFamilies.primary}', sans-serif` : undefined,
-                    flexShrink: 0,
-                  }}>Secondary</div>
-                )}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flexShrink: 0 }}>
+                <div style={{ fontSize: 7, color: '#444', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Components</div>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  {btn.background && (
+                    <div style={{
+                      padding: '3px 10px', borderRadius: spacing.borderRadius || '4px',
+                      background: btn.background, color: btn.textColor || '#fff',
+                      fontSize: 9, fontWeight: 600,
+                      border: '1px solid #444',
+                      fontFamily: fontFamilies.primary ? `'${fontFamilies.primary}', sans-serif` : undefined,
+                      flexShrink: 0,
+                    }}>Primary</div>
+                  )}
+                  {btnSec.borderColor && (
+                    <div style={{
+                      padding: '3px 10px', borderRadius: spacing.borderRadius || '4px',
+                      background: 'transparent', color: btnSec.textColor || btnSec.borderColor,
+                      fontSize: 9, fontWeight: 600, border: `1px solid ${btnSec.borderColor}`,
+                      fontFamily: fontFamilies.primary ? `'${fontFamilies.primary}', sans-serif` : undefined,
+                      flexShrink: 0,
+                    }}>Secondary</div>
+                  )}
+                </div>
               </div>
             </>
           )}
         </div>
       )}
 
-      {/* ── Scrollable content below brand strip ── */}
-      <div style={{ overflowY: 'auto', flexShrink: 0, maxHeight: '38%' }} className="profile-view-scroll">
-
-        {/* Site summary */}
-        {siteSummary && (
-          <div style={{
-            padding: '12px 16px',
-            borderBottom: '1px solid #181818',
-          }}>
-            <div style={{
-              fontSize: 9, color: '#ff6b2b', letterSpacing: '0.14em',
-              textTransform: 'uppercase', marginBottom: 6, fontWeight: 500,
-            }}>
-              Site Summary
-            </div>
-            <p style={{
-              fontSize: 11, color: '#555', lineHeight: 1.75, margin: 0, fontWeight: 300,
-              borderLeft: '2px solid #ff6b2b33', paddingLeft: 10,
-            }}>
-              {siteSummary}
-            </p>
-          </div>
-        )}
-
-        {/* Identity: typography + personality in 2-col grid */}
-        {branding && (Object.keys(fontSizes).length > 0 || personality.tone) && (
-          <div style={{
-            padding: '12px 16px',
-            display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
-            gap: 14,
-            borderBottom: '1px solid #181818',
-          }}>
+      {/* ── Identity — fixed below brand strip ── */}
+      {branding && (Object.keys(fontSizes).length > 0 || personality.tone) && (
+        <div style={{
+          flexShrink: 0,
+          padding: '12px 16px',
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: 14,
+          borderBottom: '1px solid #181818',
+          overflowY: 'auto',
+          maxHeight: 130,
+        }}>
             {/* Typography scale */}
             {Object.keys(fontSizes).length > 0 && (
               <div>
-                <div style={{ fontSize: 7, color: '#2a2a2a', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 7 }}>
+                <div style={{ fontSize: 7, color: '#444', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 7 }}>
                   Typography
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                   {fontSizes.h1 && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                      <span style={{ fontSize: 7, color: '#2a2a2a', width: 24, flexShrink: 0 }}>H1</span>
-                      <div style={{ flex: 1, height: 2, background: '#1a1a1a', borderRadius: 1, overflow: 'hidden' }}>
-                        <div style={{ width: '90%', height: '100%', background: '#ff6b2b33' }} />
+                      <span style={{ fontSize: 7, color: '#555', width: 24, flexShrink: 0 }}>H1</span>
+                      <div style={{ flex: 1, height: 2, background: '#222', borderRadius: 1, overflow: 'hidden' }}>
+                        <div style={{ width: '90%', height: '100%', background: '#ff6b2b55' }} />
                       </div>
-                      <span style={{ fontSize: 8, color: '#333', flexShrink: 0 }}>{fontSizes.h1}</span>
+                      <span style={{ fontSize: 8, color: '#666', flexShrink: 0 }}>{fontSizes.h1}</span>
                     </div>
                   )}
                   {fontSizes.h2 && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                      <span style={{ fontSize: 7, color: '#2a2a2a', width: 24, flexShrink: 0 }}>H2</span>
-                      <div style={{ flex: 1, height: 2, background: '#1a1a1a', borderRadius: 1, overflow: 'hidden' }}>
-                        <div style={{ width: '65%', height: '100%', background: '#ff6b2b33' }} />
+                      <span style={{ fontSize: 7, color: '#555', width: 24, flexShrink: 0 }}>H2</span>
+                      <div style={{ flex: 1, height: 2, background: '#222', borderRadius: 1, overflow: 'hidden' }}>
+                        <div style={{ width: '65%', height: '100%', background: '#ff6b2b55' }} />
                       </div>
-                      <span style={{ fontSize: 8, color: '#333', flexShrink: 0 }}>{fontSizes.h2}</span>
+                      <span style={{ fontSize: 8, color: '#666', flexShrink: 0 }}>{fontSizes.h2}</span>
                     </div>
                   )}
                   {fontSizes.body && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                      <span style={{ fontSize: 7, color: '#2a2a2a', width: 24, flexShrink: 0 }}>Body</span>
-                      <div style={{ flex: 1, height: 2, background: '#1a1a1a', borderRadius: 1, overflow: 'hidden' }}>
-                        <div style={{ width: '22%', height: '100%', background: '#ff6b2b33' }} />
+                      <span style={{ fontSize: 7, color: '#555', width: 24, flexShrink: 0 }}>Body</span>
+                      <div style={{ flex: 1, height: 2, background: '#222', borderRadius: 1, overflow: 'hidden' }}>
+                        <div style={{ width: '22%', height: '100%', background: '#ff6b2b55' }} />
                       </div>
-                      <span style={{ fontSize: 8, color: '#333', flexShrink: 0 }}>{fontSizes.body}</span>
+                      <span style={{ fontSize: 8, color: '#666', flexShrink: 0 }}>{fontSizes.body}</span>
                     </div>
                   )}
                   {spacing.borderRadius && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                      <span style={{ fontSize: 7, color: '#2a2a2a', width: 24, flexShrink: 0 }}>r</span>
+                      <span style={{ fontSize: 7, color: '#555', width: 24, flexShrink: 0 }}>r</span>
                       <div style={{ flex: 1, display: 'flex', gap: 4 }}>
                         {['2px','6px','12px'].map(r => (
-                          <div key={r} style={{ width: 12, height: 12, border: '1px solid #2a2a2a', borderRadius: r }} />
+                          <div key={r} style={{ width: 12, height: 12, border: '1px solid #333', borderRadius: r }} />
                         ))}
                       </div>
-                      <span style={{ fontSize: 8, color: '#333', flexShrink: 0 }}>{spacing.borderRadius}</span>
+                      <span style={{ fontSize: 8, color: '#666', flexShrink: 0 }}>{spacing.borderRadius}</span>
                     </div>
                   )}
                 </div>
@@ -270,26 +276,26 @@ export default function SiteProfileView({ branding, screenshot, siteSummary, roo
             {/* Personality */}
             {(personality.tone || personality.energy || personality.audience) && (
               <div>
-                <div style={{ fontSize: 7, color: '#2a2a2a', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 7 }}>
+                <div style={{ fontSize: 7, color: '#444', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 7 }}>
                   Personality
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                   {personality.tone && (
                     <div style={{ display: 'flex', gap: 7 }}>
-                      <span style={{ fontSize: 7, color: '#2a2a2a', width: 40, flexShrink: 0, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Tone</span>
-                      <span style={{ fontSize: 9, color: '#555' }}>{personality.tone}</span>
+                      <span style={{ fontSize: 7, color: '#555', width: 40, flexShrink: 0, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Tone</span>
+                      <span style={{ fontSize: 9, color: '#888' }}>{personality.tone}</span>
                     </div>
                   )}
                   {personality.energy && (
                     <div style={{ display: 'flex', gap: 7 }}>
-                      <span style={{ fontSize: 7, color: '#2a2a2a', width: 40, flexShrink: 0, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Energy</span>
-                      <span style={{ fontSize: 9, color: '#555' }}>{personality.energy}</span>
+                      <span style={{ fontSize: 7, color: '#555', width: 40, flexShrink: 0, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Energy</span>
+                      <span style={{ fontSize: 9, color: '#888' }}>{personality.energy}</span>
                     </div>
                   )}
                   {personality.audience && (
                     <div style={{ display: 'flex', gap: 7 }}>
-                      <span style={{ fontSize: 7, color: '#2a2a2a', width: 40, flexShrink: 0, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Audience</span>
-                      <span style={{ fontSize: 9, color: '#555' }}>{personality.audience}</span>
+                      <span style={{ fontSize: 7, color: '#555', width: 40, flexShrink: 0, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Audience</span>
+                      <span style={{ fontSize: 9, color: '#888' }}>{personality.audience}</span>
                     </div>
                   )}
                 </div>
@@ -297,7 +303,6 @@ export default function SiteProfileView({ branding, screenshot, siteSummary, roo
             )}
           </div>
         )}
-      </div>
     </div>
   );
 }

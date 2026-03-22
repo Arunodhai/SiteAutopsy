@@ -1627,6 +1627,46 @@ body {
   flex-shrink: 0;
 }
 
+/* ── URL Structure tree ─────────────────────────────────── */
+.url-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow-y: auto;
+  max-height: 260px;
+}
+.url-tree::-webkit-scrollbar       { width: 2px; }
+.url-tree::-webkit-scrollbar-track { background: transparent; }
+.url-tree::-webkit-scrollbar-thumb { background: #1a1a1a; border-radius: 2px; }
+.url-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+  cursor: default;
+  border-radius: 2px;
+  transition: background 0.1s;
+}
+.url-tree-row:hover { background: #0e0e0e; }
+.url-tree-connector { color: #252525; flex-shrink: 0; font-size: 10px; }
+.url-tree-path {
+  font-size: 10px;
+  color: #444;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  letter-spacing: 0.02em;
+}
+.url-tree-path.root  { color: #ff6b2b88; }
+.url-tree-path.depth1 { color: #3a3a3a; }
+.url-tree-path.depth2 { color: #2a2a2a; }
+.url-tree-count {
+  font-size: 8px;
+  color: '#222';
+  letter-spacing: 0.08em;
+}
+
 /* ── Sidebar vertical nav ───────────────────────────────── */
 .sidebar-nav {
   border-bottom: 1px solid #181818;
