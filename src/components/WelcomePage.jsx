@@ -40,22 +40,22 @@ function posAtLen(pts, target) {
 // Trace definitions as [x%, y%] waypoints from edge → toward center
 // (8 traces, 2 per side, designed to frame the hero)
 const TRACE_DEFS = [
-  // Left — upper: comes from left edge, routes up then right
-  [[0, 34], [17, 34], [17, 20], [28, 20]],
-  // Left — lower: comes from left edge, routes down then right
-  [[0, 62], [13, 62], [13, 76], [26, 76]],
-  // Right — upper: comes from right edge, routes up then left
-  [[100, 30], [83, 30], [83, 18], [72, 18]],
-  // Right — lower: comes from right edge, routes down then left
-  [[100, 64], [87, 64], [87, 78], [74, 78]],
-  // Top — left: comes from top, routes right then down
-  [[34, 0], [34, 13], [24, 13], [24, 21]],
-  // Top — right: comes from top, routes left then down
-  [[66, 0], [66, 10], [76, 10], [76, 21]],
-  // Bottom — left
-  [[36, 100], [36, 87], [25, 87], [25, 79]],
-  // Bottom — right
-  [[64, 100], [64, 88], [75, 88], [75, 80]],
+  // Left — upper: routes to top-left of hero
+  [[0, 34], [20, 34], [20, 22], [37, 22]],
+  // Left — lower: routes to bottom-left of hero
+  [[0, 64], [16, 64], [16, 74], [35, 74]],
+  // Right — upper: routes to top-right of hero
+  [[100, 28], [80, 28], [80, 20], [63, 20]],
+  // Right — lower: routes to bottom-right of hero
+  [[100, 66], [84, 66], [84, 76], [65, 76]],
+  // Top — left: routes down to top of hero
+  [[38, 0], [38, 16], [29, 16], [29, 28]],
+  // Top — right: routes down to top of hero
+  [[62, 0], [62, 12], [71, 12], [71, 28]],
+  // Bottom — left: routes up to bottom of hero
+  [[38, 100], [38, 84], [28, 84], [28, 72]],
+  // Bottom — right: routes up to bottom of hero
+  [[62, 100], [62, 86], [72, 86], [72, 72]],
 ];
 
 function CircuitCanvas() {
