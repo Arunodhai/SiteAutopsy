@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
+import CpuArchitecture from './CpuArchitecture';
 
 const FEATURES = [
   {
@@ -14,175 +15,6 @@ const FEATURES = [
     body: 'A deterministic score across 5 weighted categories — On-Page, Technical, Content, Social, and Performance. Consistent, transparent, reproducible.',
   },
 ];
-
-// ── Circuit canvas ─────────────────────────────────────────────────────────────
-
-function pathLength(pts) {
-  let len = 0;
-  for (let i = 1; i < pts.length; i++)
-    len += Math.abs(pts[i][0]-pts[i-1][0]) + Math.abs(pts[i][1]-pts[i-1][1]);
-  return len;
-}
-
-function posAtLen(pts, target) {
-  let acc = 0;
-  for (let i = 1; i < pts.length; i++) {
-    const seg = Math.abs(pts[i][0]-pts[i-1][0]) + Math.abs(pts[i][1]-pts[i-1][1]);
-    if (acc + seg >= target) {
-      const f = seg === 0 ? 0 : (target - acc) / seg;
-      return { x: pts[i-1][0]+(pts[i][0]-pts[i-1][0])*f, y: pts[i-1][1]+(pts[i][1]-pts[i-1][1])*f };
-    }
-    acc += seg;
-  }
-  return { x: pts.at(-1)[0], y: pts.at(-1)[1] };
-}
-
-// Trace definitions as [x%, y%] waypoints from edge → toward center
-// (8 traces, 2 per side, designed to frame the hero)
-const TRACE_DEFS = [
-  // Left — upper: routes to top-left corner of hero
-  [[0, 36], [26, 36], [26, 28], [32, 28]],
-  // Left — lower: routes to bottom-left of hero
-  [[0, 60], [22, 60], [22, 67], [31, 67]],
-  // Right — upper: routes to top-right of hero
-  [[100, 32], [74, 32], [74, 26], [68, 26]],
-  // Right — lower: routes to bottom-right of hero
-  [[100, 62], [78, 62], [78, 68], [69, 68]],
-  // Top — left: routes down to just above headline
-  [[40, 0], [40, 20], [33, 20], [33, 27]],
-  // Top — right: routes down to just above headline
-  [[60, 0], [60, 16], [67, 16], [67, 27]],
-  // Bottom — left: routes up to just below history pills
-  [[40, 100], [40, 80], [32, 80], [32, 68]],
-  // Bottom — right: routes up to just below history pills
-  [[60, 100], [60, 82], [68, 82], [68, 68]],
-];
-
-function CircuitCanvas() {
-  const canvasRef = useRef(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const ctx    = canvas.getContext('2d');
-    let animId;
-    let lastTs = null;
-    let traces = [];
-
-    const CORNER_R  = 14;   // rounded corner radius
-    const TAIL_LEN  = 80;   // comet tail length in px
-    const TRACE_A   = 0.75; // trace line alpha
-    const TRACE_COL = `rgba(30, 30, 30, ${TRACE_A})`;
-
-    const rebuild = () => {
-      const w = canvas.width  = window.innerWidth;
-      const h = canvas.height = window.innerHeight;
-
-      traces = TRACE_DEFS.map((pcts, i) => ({
-        pts:        pcts.map(([px, py]) => [w * px / 100, h * py / 100]),
-        pulsePos:   i / TRACE_DEFS.length,           // stagger starts
-        pulseSpeed: 0.065 + (i % 4) * 0.018,         // slightly varied speeds
-        totalLen:   0, // computed below
-      }));
-      traces.forEach(t => { t.totalLen = pathLength(t.pts); });
-    };
-
-    rebuild();
-    window.addEventListener('resize', rebuild);
-
-    // Draw a trace with rounded corners using arcTo
-    const strokeTrace = (pts) => {
-      if (pts.length < 2) return;
-      ctx.beginPath();
-      ctx.moveTo(pts[0][0], pts[0][1]);
-      for (let i = 1; i < pts.length - 1; i++) {
-        ctx.arcTo(pts[i][0], pts[i][1], pts[i+1][0], pts[i+1][1], CORNER_R);
-      }
-      ctx.lineTo(pts.at(-1)[0], pts.at(-1)[1]);
-      ctx.strokeStyle = TRACE_COL;
-      ctx.lineWidth   = 1;
-      ctx.stroke();
-    };
-
-    // Small circular pad (ring + inner dot) — matches reference
-    const drawPad = (x, y, alpha = 0.75) => {
-      ctx.beginPath();
-      ctx.arc(x, y, 4, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(42, 42, 42, ${alpha})`;
-      ctx.lineWidth   = 1;
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(x, y, 1.5, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(42, 42, 42, ${alpha * 0.8})`;
-      ctx.fill();
-    };
-
-    // Comet: gradient tail + glowing head
-    const drawComet = (pts, headLen) => {
-      const tailStart = Math.max(0, headLen - TAIL_LEN);
-      const steps     = 20;
-
-      for (let i = 0; i <= steps; i++) {
-        const t   = i / steps;
-        const len = tailStart + t * (headLen - tailStart);
-        const { x, y } = posAtLen(pts, len);
-        const alpha = Math.pow(t, 1.8) * 0.88;
-        const r     = 0.5 + t * 2.5;
-        ctx.beginPath();
-        ctx.arc(x, y, r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255, 107, 43, ${alpha})`;
-        ctx.fill();
-      }
-
-      // Glow halo at head
-      const { x: hx, y: hy } = posAtLen(pts, headLen);
-      const grd = ctx.createRadialGradient(hx, hy, 0, hx, hy, 10);
-      grd.addColorStop(0,   'rgba(255, 120, 50, 0.80)');
-      grd.addColorStop(0.35,'rgba(255, 107, 43, 0.30)');
-      grd.addColorStop(1,   'rgba(255, 107, 43, 0)');
-      ctx.beginPath();
-      ctx.arc(hx, hy, 10, 0, Math.PI * 2);
-      ctx.fillStyle = grd;
-      ctx.fill();
-    };
-
-    const draw = (ts) => {
-      if (!lastTs) lastTs = ts;
-      const dt = Math.min(ts - lastTs, 50);
-      lastTs = ts;
-
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      for (const t of traces) {
-        t.pulsePos = (t.pulsePos + t.pulseSpeed * dt / 1000) % 1;
-
-        // Base trace (rounded corners, always visible)
-        strokeTrace(t.pts);
-
-        // Terminal pad at inner end (near hero)
-        drawPad(t.pts.at(-1)[0], t.pts.at(-1)[1]);
-        // Smaller dot at outer edge start
-        drawPad(t.pts[0][0], t.pts[0][1], 0.45);
-
-        // Comet
-        drawComet(t.pts, t.pulsePos * t.totalLen);
-      }
-
-      animId = requestAnimationFrame(draw);
-    };
-
-    animId = requestAnimationFrame(draw);
-    return () => { cancelAnimationFrame(animId); window.removeEventListener('resize', rebuild); };
-  }, []);
-
-  return (
-    <canvas
-      ref={canvasRef}
-      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 0 }}
-    />
-  );
-}
-
-// ── Welcome page ───────────────────────────────────────────────────────────────
 
 export default function WelcomePage({ onStart, url, setUrl, history, onSelectHistory }) {
   const [hovered, setHovered] = useState(null);
@@ -204,7 +36,22 @@ export default function WelcomePage({ onStart, url, setUrl, history, onSelectHis
       fontFamily: "'JetBrains Mono', 'Fira Code', 'Courier New', monospace",
     }}>
 
-      <CircuitCanvas />
+      {/* CPU Architecture SVG background */}
+      <div style={{
+        position: 'absolute',
+        inset: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        pointerEvents: 'none',
+        zIndex: 0,
+        padding: '57px 0 120px', // account for header + feature strip
+      }}>
+        <CpuArchitecture
+          text="SEO"
+          style={{ width: '100%', height: '100%', maxWidth: '1400px' }}
+        />
+      </div>
 
       {/* Header */}
       <header style={{
