@@ -19,8 +19,8 @@ export default function CpuArchitecture({
       {/* Peripheral clip — hides everything inside the hero content zone */}
       <defs>
         <clipPath id="cpu-periphery-clip">
-          {/* evenodd: full canvas minus the center content rectangle */}
-          <path fillRule="evenodd" d="M0,0 H200 V100 H0 Z M52,24 H148 V76 H52 Z" />
+          {/* clip-rule evenodd: full canvas minus the center content rectangle */}
+          <path clipRule="evenodd" d="M0,0 H200 V100 H0 Z M50,22 H150 V78 H50 Z" />
         </clipPath>
       </defs>
 
