@@ -16,6 +16,16 @@ export default function CpuArchitecture({
       viewBox="0 0 200 100"
       preserveAspectRatio="xMidYMid meet"
     >
+      {/* Peripheral clip — hides everything inside the hero content zone */}
+      <defs>
+        <clipPath id="cpu-periphery-clip">
+          {/* evenodd: full canvas minus the center content rectangle */}
+          <path fillRule="evenodd" d="M0,0 H200 V100 H0 Z M52,24 H148 V76 H52 Z" />
+        </clipPath>
+      </defs>
+
+      <g clipPath="url(#cpu-periphery-clip)">
+
       {/* Paths */}
       <g
         stroke="currentColor"
@@ -72,6 +82,8 @@ export default function CpuArchitecture({
       <g mask="url(#cpu-mask-8)">
         <circle className="cpu-architecture cpu-line-8" cx="0" cy="0" r="8" fill="url(#cpu-orange-grad-f)" />
       </g>
+
+      </g> {/* end periphery clip group */}
 
       {/* CPU Box */}
       {showChip && <g>
