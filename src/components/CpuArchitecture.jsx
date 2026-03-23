@@ -1,15 +1,16 @@
 export default function CpuArchitecture({
   text = 'SEO',
+  showChip = true,
   showCpuConnections = true,
   animateText = true,
-  lineMarkerSize = 18,
+  lineMarkerSize = 6,
   animateLines = true,
   animateMarkers = true,
   style = {},
 }) {
   return (
     <svg
-      style={{ color: '#1e1e1e', ...style }}
+      style={{ color: '#161616', ...style }}
       width="100%"
       height="100%"
       viewBox="0 0 200 100"
@@ -73,7 +74,7 @@ export default function CpuArchitecture({
       </g>
 
       {/* CPU Box */}
-      <g>
+      {showChip && <g>
         {showCpuConnections && (
           <g fill="url(#cpu-connection-gradient)">
             <rect x="93" y="37" width="2.5" height="5" rx="0.7" />
@@ -96,7 +97,7 @@ export default function CpuArchitecture({
         >
           {text}
         </text>
-      </g>
+      </g>}
 
       <defs>
         {/* Masks */}

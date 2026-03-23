@@ -45,11 +45,16 @@ export default function WelcomePage({ onStart, url, setUrl, history, onSelectHis
         justifyContent: 'center',
         pointerEvents: 'none',
         zIndex: 0,
-        padding: '57px 0 120px', // account for header + feature strip
+        opacity: 0.9,
       }}>
+        {/* SVG viewBox is 200×100 (2:1). Fix width so traces frame the page nicely.
+            At 1200px wide the height is 600px — fits most viewports without overflowing. */}
         <CpuArchitecture
           text="SEO"
-          style={{ width: '100%', height: '100%', maxWidth: '1400px' }}
+          showChip={false}
+          showCpuConnections={false}
+          lineMarkerSize={6}
+          style={{ width: '1200px', height: '600px', flexShrink: 0 }}
         />
       </div>
 
